@@ -70,10 +70,13 @@ class quadratic_problem ():
     def primal_base (self, B, N, l, x, y, z):
         delta_x_l = 1
 
-        tmp_mat = np.concatenate((np.concatenate ( (self.H[B, B], self.A[B, :].T), axis = 1), np.concatenate ( (self.A[B, :], -self.M ), axis = 1)), axis = 0 ) #not sure about this whole thing
-        tmp_sol = - tmp_mat.I * np.concatenate(self.H[B, l], self.A[:, l]) #wait no sta cosa non mi torna perché sono scalari aaaaaaaaa
+        tmp_A = np.concatenate((np.concatenate ( (self.H[B, B], self.A[B, :].T), axis = 1),
+                                np.concatenate ( (self.A[B, :], -self.M ), axis = 1)),
+                               axis = 0 ) #not sure about this whole thing
+        tmp_b = - np.concatenate(self.H[B, l], self.A[:, l]) #wait no sta cosa non mi torna perché sono scalari aaaaaaaaa
+        tmp_sol = np.linalg.solve(tmp_A, tmp_b)
         #tutta sta parte del sistema è precaria e sadda provà
-        delta_y = tmp_sol[-B.len:] #
+        delta_y = tmp_sol[B.len:] #i'm not sure
         delta_x_B = tmp_sol[:B.len]
     
         delta_z_N = self.H[N, l]*delta_x_l + self.H[B, N].T*delta_x_B - self.A[N].T*delta_y
@@ -118,10 +121,16 @@ class quadratic_problem ():
     def primal_intermediate (self, B, N, l, x, y, z):
         delta_z_l = 1
 
+        tmp_A = np.concatenate((np.concatenate((self.H[l, l], self.H[B, l].T, self.A[l, :].T), axis = 1),
+                                np.concatenate((self.H[B][l], self.H[B][B], self.A[B, :].T), axis = 1),
+                                np.concatenate((self.A[l, :], self.A[B, :], -self.M), axis = 1)),
+                               axis = 0)
+        tmp_b = np.array ([1, 0, 0])
+        tmp_sol = np.linalg.solve (tmp_A, tmp_b)
         #robo da risolvere
-        #delta_x_l = stuff
-        #delta_x_B = stuff
-        #delta_y = stuff
+        delta_x_l = tmp_sol[0]
+        delta_x_B = tmp_sol[1:B.len+1]
+        delta_y = tmp_sol[B.len+1:]
 
         detla_z_N = self.H[N, l] * delta_x_l + self.H.T[B, N] * delta_x_B - self.A.T[N, :] * delta_y
         alpha_opt = -(z[l] + self.r[l])
