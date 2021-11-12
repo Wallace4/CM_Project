@@ -151,3 +151,7 @@ class quadratic_problem ():
             N[k] = True
         return (B, N, x, y, z)
     #kind of a mess but ok
+
+
+if __name__ == "__main__":
+    
