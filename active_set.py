@@ -80,7 +80,7 @@ class quadratic_problem:
             print ("Errore nella scelta di x, y, z, ma con la somma")
             return None  # non soddisfa una delle condizioni.
         while 1:
-            l_array = np.where(sum_zr < 0)[0]
+            l_array = np.argwhere(sum_zr < 0)[0]
             print ("l: ", l_array)
             if l_array == []:
                 print ("Processo terminato")
@@ -271,8 +271,8 @@ if __name__ == "__main__":
     H = np.array([ [-2, 0], [0, -2] ])
     M = np.zeros((2, 2))
     qp = quadratic_problem (A, b, c, H, M)
-    x = np.array([0, 2])
+    x = np.array([1, 0])
     y = np.zeros(2)
-    z = np.array([-1, 0])
+    z = np.array([0, -1])
     qp.primal_active_set(x, y, z)
     pass
