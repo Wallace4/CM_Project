@@ -80,9 +80,9 @@ class quadratic_problem:
             print ("Errore nella scelta di x, y, z, ma con la somma")
             return None  # non soddisfa una delle condizioni.
         while 1:
-            l_array = np.where(sum_zr < 0)
-            print ("l: ", l_array[0])
-            if l_array[0] == []:
+            l_array = np.where(sum_zr < 0)[0]
+            print ("l: ", l_array)
+            if l_array == []:
                 print ("Processo terminato")
                 print ("x: ", x)
                 print ("y: ", y)
@@ -112,27 +112,36 @@ class quadratic_problem:
     """
 
     def primal_base(self, B, N, l, x, y, z):
-        print("-"*20)
-        print("Iterazione base del problema usando l'indice: ", l)
-        print()
+        print ("-"*20)
+        print ("Iterazione base del problema usando l'indice: ", l)
+        print ()
         
         delta_x_l = 1
+        print ("Hbb: ", self.H[B, :][:, B])
+        print ("Ab: ", self.A[:, B])
+        print ("M: ", self.M)
 
         tmp_A = np.concatenate(
             (
-                np.concatenate((self.H[B, :][:, B], self.A[B].T), axis=1),
-                np.concatenate((self.A[B], -self.M), axis=1),
+                np.concatenate((self.H[B, :][:, B], self.A[:, B].T), axis=1),
+                np.concatenate((self.A[:, B], -self.M), axis=1),
             ),
             axis=0,
         )  # not sure about this whole thing
-        print("K_I: ", tmp_A)
+        print ("K_I: ", tmp_A)
+        print ()
+
+        print ("Hb: ", self.H[B, l])
+        print ("Al: ", self.A[l])
         tmp_b = -np.concatenate(
-            self.H[B, l], self.A[:, l]
+            (self.H[B, l], self.A[l]),
+            axis=0
         )  # wait no sta cosa non mi torna perché sono scalari aaaaaaaaa
-        print("b: ", tmp_b)
+        print ("b: ", tmp_b)
+        print ()
         tmp_sol = np.linalg.solve(tmp_A, tmp_b)
-        print("sol: ", tmp_sol)
-        print()
+        print ("sol: ", tmp_sol)
+        print ()
         # tutta sta parte del sistema è precaria e sadda provà
         delta_y = tmp_sol[B.len:]  # i'm not sure, dovrebbe essere di dimensione m
         delta_x_B = tmp_sol[:B.len]
@@ -262,8 +271,8 @@ if __name__ == "__main__":
     H = np.array([ [-2, 0], [0, -2] ])
     M = np.zeros((2, 2))
     qp = quadratic_problem (A, b, c, H, M)
-    x = np.array([0.5, 2])
+    x = np.array([0, 2])
     y = np.zeros(2)
-    z = np.zeros(2)
+    z = np.array([-1, 0])
     qp.primal_active_set(x, y, z)
     pass
