@@ -54,12 +54,20 @@ class quadratic_problem:
     """
 
     def primal_active_set(self, x, y, z):
+        print("-"*20)
+        print("Starting the resolution of the Primal Problem of the Active Sets")
+        print()
+        
         sum_xq = x + self.q
         sum_zr = z + self.r
         N = (
             sum_xq
         ) == 0  # dovrebbe restituire un vettore di veri e falsi. Also da fare che non sia == 0 ma in una certa epsilon.
-        B = (sum_zr) == 0  # come sopra
+        B = (
+            sum_zr
+        ) == 0  # come sopra
+        print("N: ", N)
+        print("B, ", B)
         if np.logical_xor(B, N) == False:
             return None  # ci sono degli elementi che sono sia in N che in B.
         if (sum_xq) < 0:
@@ -92,33 +100,43 @@ class quadratic_problem:
     """
 
     def primal_base(self, B, N, l, x, y, z):
+        print("-"*20)
+        print("Iterazione base del problema usando l'indice: ", l)
+        print()
+        
         delta_x_l = 1
 
         tmp_A = np.concatenate(
             (
-                np.concatenate((self.H[B, B], self.A[B, :].T), axis=1),
-                np.concatenate((self.A[B, :], -self.M), axis=1),
+                np.concatenate((self.H[B, :][:, B], self.A[B].T), axis=1),
+                np.concatenate((self.A[B], -self.M), axis=1),
             ),
             axis=0,
         )  # not sure about this whole thing
+        print("K_I: ", tmp_A)
         tmp_b = -np.concatenate(
             self.H[B, l], self.A[:, l]
         )  # wait no sta cosa non mi torna perché sono scalari aaaaaaaaa
+        print("b: ", tmp_b)
         tmp_sol = np.linalg.solve(tmp_A, tmp_b)
+        print("sol: ", tmp_sol)
+        print()
         # tutta sta parte del sistema è precaria e sadda provà
-        delta_y = tmp_sol[B.len :]  # i'm not sure
-        delta_x_B = tmp_sol[: B.len]
+        delta_y = tmp_sol[B.len:]  # i'm not sure
+        delta_x_B = tmp_sol[:B.len]
 
         delta_z_N = (
             self.H[N, l] * delta_x_l
             + self.H[B, N].T * delta_x_B
             - self.A[N].T * delta_y
         )
+        print("delta z N: ", delta_z_N)
         delta_z_l = (
             self.H[l, l] * delta_x_l
             + self.H[B, l].T * delta_x_B
             - self.A[l].T * delta_y
         )
+        print("delta z l", delta_z_l)
 
         alpha_opt = math.inf if delta_z_l == 0 else -(z[l] + r[l]) / delta_z_l
 
@@ -128,7 +146,8 @@ class quadratic_problem:
         k = np.argmin((x[B] + self.q[B]) / -delta_x_B)
 
         alpha = min(alpha_opt, alpha_max)
-
+        print ("alpha = min (", alpha_opt, "; ", alpha_max, "); k = ", k)
+        print ()
         if alpha == math.inf:
             return  # il problema è impraticabile
 
@@ -137,11 +156,15 @@ class quadratic_problem:
         y = y + alpha * delta_y
         z[l] = z[l] + alpha * delta_z_l
         z[N] = z[N] + alpha * delta_z_N
-
         if z[l] + r[l] < 0:
             B[k] = False
             N[k] = True
-
+        print ("x: ", x)
+        print ("y: ", y)
+        print ("z: ", z)
+        print ("B: ", B)
+        print ("N: ", N)
+        print ()
         return B, N, x, y, z
 
     """
@@ -157,28 +180,36 @@ class quadratic_problem:
     """
 
     def primal_intermediate(self, B, N, l, x, y, z):
+        print("-"*20)
+        print("Passo intermendio del problema usando l'indice: ", l)
+        print()
         delta_z_l = 1
 
         tmp_A = np.concatenate(
             (
                 np.concatenate((self.H[l, l], self.H[B, l].T, self.A[l, :].T), axis=1),
-                np.concatenate((self.H[B][l], self.H[B][B], self.A[B, :].T), axis=1),
-                np.concatenate((self.A[l, :], self.A[B, :], -self.M), axis=1),
+                np.concatenate((self.H[B][l], self.H[B][:, B], self.A[B].T), axis=1),
+                np.concatenate((self.A[l, :], self.A[B], -self.M), axis=1),
             ),
             axis=0,
         )
         tmp_b = np.array([1, 0, 0])
         tmp_sol = np.linalg.solve(tmp_A, tmp_b)
+        print ("K_I: ", tmp_A)
+        print ("b: ", tmp_b)
+        print ("sol: ", tmp_sol)
+        print ()
         # robo da risolvere
-        delta_x_l = tmp_sol[0]
+        delta_x_l = tmp_sol[0] #non sono pienamente sicuro
         delta_x_B = tmp_sol[1 : B.len + 1]
         delta_y = tmp_sol[B.len + 1 :]
 
-        detla_z_N = (
+        delta_z_N = (
             self.H[N, l] * delta_x_l
             + self.H.T[B, N] * delta_x_B
             - self.A.T[N, :] * delta_y
         )
+        print ("delta z N:", delta_z_N)
         alpha_opt = -(z[l] + self.r[l])
         min_mask = (
             delta_x_B < 0
@@ -188,7 +219,9 @@ class quadratic_problem:
         k = np.argmin((x[min_mask] + self.q[min_mask]) / -delt_x_B[min_mask])
 
         alpha = min(alpha_opt, alpha_max)
-
+        print ("alpha = min (", alpha_opt, "; ", alpha_max, "); k = ", k)
+        print()
+        
         x[l] = x[l] + alpha * delta_l
         x[B] = x[B] + alpha * delta_x_B
         y = y + alpha * delta_y
@@ -197,6 +230,12 @@ class quadratic_problem:
         if z[l] + self.r[l] < 0:
             B[k] = False
             N[k] = True
+        print ("x: ", x)
+        print ("y: ", y)
+        print ("z: ", z)
+        print ("B: ", B)
+        print ("N: ", N)
+        print ()
         return (B, N, x, y, z)
 
     # kind of a mess but ok
