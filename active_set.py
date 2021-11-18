@@ -1,3 +1,6 @@
+#!bin/usr/python
+# coding=utf-8
+
 import numpy as np
 import math
 
@@ -28,9 +31,9 @@ class quadratic_problem:
                 if dim == None or x.shape == dim:
                     return x
                 else:
-                    raise TypeError(f"{varname} has shape {x.shape} expected {dim}")
+                    raise TypeError(f'<{varname}> has shape <{x.shape}> expected <{dim}>')
             else:
-                raise TypeError(f"{varname} is not {type({np.ndarray})}")
+                raise TypeError(f'<{varname}> is not {type({np.ndarray})}')
 
         # shape of A is assumed to be correct
         self.A = check_shape(A, varname="A")
@@ -42,7 +45,7 @@ class quadratic_problem:
         self.M = check_shape(M, dim=(m, m), varname="M")
 
         self.q = check_shape(q, dim=(n,), varname="q") if q else np.zeros(n)
-        self.r = check_shape(r, dim=(n,), varname="r") if q else np.zeros(n)
+        self.r = check_shape(r, dim=(n,), varname="r") if r else np.zeros(n)
 
     """
     funzione per calcolare il problema primale degli active set
@@ -60,6 +63,8 @@ class quadratic_problem:
         
         sum_xq = x + self.q
         sum_zr = z + self.r
+        print ("sum_xq: ", sum_xq)
+        print ("sum_zr: ", sum_zr)
         N = (
             sum_xq
         ) == 0  # dovrebbe restituire un vettore di veri e falsi. Also da fare che non sia == 0 ma in una certa epsilon.
@@ -68,13 +73,16 @@ class quadratic_problem:
         ) == 0  # come sopra
         print("N: ", N)
         print("B, ", B)
-        if np.logical_xor(B, N) == False:
+        if all(np.logical_xor(B, N)) == False:
+            print ("Errore nella scelta di x, y, z")
             return None  # ci sono degli elementi che sono sia in N che in B.
-        if (sum_xq) < 0:
+        if any((sum_xq) < 0):
+            print ("Errore nella scelta di x, y, z, ma con la somma")
             return None  # non soddisfa una delle condizioni.
         while 1:
-            l_array = range(sum_zr.len)[sum_zr < 0]
-            if l_array == []:
+            l_array = np.where(sum_zr < 0)
+            print ("l: ", l_array[0])
+            if l_array[0] == []:
                 print ("Processo terminato")
                 print ("x: ", x)
                 print ("y: ", y)
@@ -248,4 +256,14 @@ class quadratic_problem:
 
 
 if __name__ == "__main__":
+    A = np.array([ [1, 1], [2, 1] ])
+    b = np.array([2, 3])
+    c = np.array([2, 3])
+    H = np.array([ [-2, 0], [0, -2] ])
+    M = np.zeros((2, 2))
+    qp = quadratic_problem (A, b, c, H, M)
+    x = np.array([0.5, 2])
+    y = np.zeros(2)
+    z = np.zeros(2)
+    qp.primal_active_set(x, y, z)
     pass
