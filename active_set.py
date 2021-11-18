@@ -75,6 +75,10 @@ class quadratic_problem:
         while 1:
             l_array = range(sum_zr.len)[sum_zr < 0]
             if l_array == []:
+                print ("Processo terminato")
+                print ("x: ", x)
+                print ("y: ", y)
+                print ("z: ", z)
                 return (
                     x,
                     y,
@@ -122,24 +126,26 @@ class quadratic_problem:
         print("sol: ", tmp_sol)
         print()
         # tutta sta parte del sistema è precaria e sadda provà
-        delta_y = tmp_sol[B.len:]  # i'm not sure
+        delta_y = tmp_sol[B.len:]  # i'm not sure, dovrebbe essere di dimensione m
         delta_x_B = tmp_sol[:B.len]
 
         delta_z_N = (
-            self.H[N, l] * delta_x_l
-            + self.H[B, N].T * delta_x_B
-            - self.A[N].T * delta_y
+            self.H[N, l] * delta_x_l #qui * va bene perché delta_x_l è uno scalare
+            + np.matmul(self.H[B][:, N].T, delta_x_B) #qui usiamo matmul perché è la moltiplicazione di una matrice #Nx#B per un vettore #Bx1
+            - np.matmul(self.A[:, N].T, delta_y) #come sopra, #Nxm per mx1
         )
         print("delta z N: ", delta_z_N)
         delta_z_l = (
-            self.H[l, l] * delta_x_l
-            + self.H[B, l].T * delta_x_B
-            - self.A[l].T * delta_y
+            self.H[l, l] * delta_x_l #scalare
+            + np.matmul(self.H[B, l].T, delta_x_B) # qui è un vettore 1x#B per #B
+            - np.matmul(self.A[l].T, delta_y) # qui è 1xm per mx1
         )
         print("delta z l", delta_z_l)
 
         alpha_opt = math.inf if delta_z_l == 0 else -(z[l] + r[l]) / delta_z_l
-
+        min_mask = (
+            delta_x_B < 0
+        )
         # da fare che qui calcoli solo se delta_x è negativo. Però noi abbiamo che non sappiamo delta_x, sooooo
         # nell'intermiedate ho proposto una soluzione ma sono poco sicuro
         alpha_max = np.min((x[B] + self.q[B]) / -delta_x_B)
@@ -201,13 +207,13 @@ class quadratic_problem:
         print ()
         # robo da risolvere
         delta_x_l = tmp_sol[0] #non sono pienamente sicuro
-        delta_x_B = tmp_sol[1 : B.len + 1]
-        delta_y = tmp_sol[B.len + 1 :]
+        delta_x_B = tmp_sol[1 : B.len + 1] #dimensione #B
+        delta_y = tmp_sol[B.len + 1 :] #dimensione m
 
         delta_z_N = (
-            self.H[N, l] * delta_x_l
-            + self.H.T[B, N] * delta_x_B
-            - self.A.T[N, :] * delta_y
+            self.H[N, l] * delta_x_l #scalare 
+            + np.matmul(self.H[B][:, N].T, delta_x_B) #moltiplicazione #Nx#B per #Bx1
+            - np.matmul(self.A[:, N].T, delta_y) # moltiplicazione #Nxm per #mx1
         )
         print ("delta z N:", delta_z_N)
         alpha_opt = -(z[l] + self.r[l])
