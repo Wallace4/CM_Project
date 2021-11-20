@@ -101,9 +101,9 @@ class quadratic_problem:
             return None  # non soddisfa una delle condizioni.
         # --------------- Inizio loop principale
         while True:
-            l_list = np.argwhere(sum_zr < 0)[0]
-            print ("l: ", l_list)
-            if l_list == []:
+            l_list = np.argwhere((self.z - self.r) < 0)
+            print ("l: ", l_list.flatten())
+            if l_list.size == 0:
                 print ("Processo terminato")
                 print ("x: ", self.x)
                 print ("y: ", self.y)
@@ -116,7 +116,8 @@ class quadratic_problem:
             l = l_list[0]
             self.N[l] = False  # prendo il primo elemento di l e lo levo da N.
             self.primal_base(l)
-            while (z[l] + r[l]) < 0:
+            while (self.z[l] + self.r[l]) < 0:
+                input("premi per continuare...")
                 self.primal_intermediate(l)
             self.B[l] = True
 
@@ -136,7 +137,7 @@ class quadratic_problem:
         print ("Iterazione base del problema usando l'indice: ", l)
         print ()
         
-        self.dx[l] = 1
+        self.dx[l] = 1.
         B_size = np.sum((self.B))
         
         print ("Hbb:\n", self.H[self.B, :][:, self.B])
@@ -150,61 +151,68 @@ class quadratic_problem:
         print ()
 
         print ("Hb:\n", self.H[self.B][:, l])
-        print ("Al:\n", self.A[l])
+        print ("Al:\n", self.A[:, l])
         tmp_b = -np.concatenate(
-            (self.H[self.B][:, l], self.A[l]),
+            (self.H[self.B][:, l], self.A[:, l]),
             axis=0
         )
         print ("b:\n", tmp_b)
         print ()
         
-        tmp_sol = np.linalg.solve(K_I, tmp_b) #da cambiare
+        tmp_sol = np.linalg.solve(K_I, tmp_b).reshape((B_size + self.y.size,)) #da cambiare
         print ("sol:\n", tmp_sol)
         print ()
         
         self.dx[self.B], self.dy[:] = tmp_sol[:B_size], -tmp_sol[B_size:]
+        print("delta x:\n", self.dx)
+        print("detla y:\n", self.dy)
 
         self.dz[self.N] = (
-            self.H[self.N, l] * self.dx[l] #qui * va bene perché delta_x_l è uno scalare
-            + np.matmul(self.H[self.B][:, self.N].T, self.dx[B]) #qui usiamo matmul perché è la moltiplicazione di una matrice #Nx#B per un vettore #Bx1
-            - np.matmul(self.A[:, self.N].T, self.dy) #come sopra, #Nxm per mx1
+              self.H[self.N, l]           * self.dx[l] #qui * va bene perché delta_x_l è uno scalare
+            + self.H[self.B][:, self.N].T @ self.dx[self.B] #qui usiamo matmul perché è la moltiplicazione di una matrice #Nx#B per un vettore #Bx1
+            - self.A[:, self.N].T         @ self.dy #come sopra, #Nxm per mx1
         )
         self.dz[l] = (
-            self.H[l, l] * self.dx[l] #scalare
-            + np.matmul(self.H[self.B][:, l].T, self.dx[self.B]) # qui è un vettore 1x#B per #B
-            - np.matmul(self.A[l].T, self.dy) # qui è 1xm per mx1
+              self.H[l, l]           * self.dx[l] #scalare
+            + self.H[self.B][:, l].T @ self.dx[self.B] # qui è un vettore 1x#B per #B
+            - self.A[:, l].T         @ self.dy # qui è 1xm per mx1
         )
-        print("delta z\tN")
-        print(self.dz, "\t", self.N)
+        print("delta z:\n", self.dz)
+        print()
 
-        alpha_opt = math.inf if np.allclose(dx[l], 0, rtol=self.tol) else -(self.z[l] + self.r[l]) / self.dz[l]
+        alpha_opt = math.inf if np.allclose(self.dx[l], 0, rtol=self.tol) else -(self.z[l] + self.r[l]) / self.dz[l]
 
         min_mask = ( self.dx < 0 )
-        to_min = (self.x[min_mask] + self.q[min_mask]) / -self.dx[min_mask]
-        k = np.argmin(to_min)
-        alpha_max = to_min[k]
+        if np.sum(min_mask) == 0:
+            alpha_max = np.inf
+        else:
+            to_min = (self.x[min_mask] + self.q[min_mask]) / -self.dx[min_mask]
+            k = np.argmin(to_min)
+            alpha_max = to_min[k]
 
         alpha = min(alpha_opt, alpha_max)
-        print ("alpha = min (", alpha_opt, "; ", alpha_max, "); k = ", k)
+        print ("alpha = min (", alpha_opt, "; ", alpha_max, ");")
         print ()
         
         if np.isinf(alpha):
             raise Exception("Primal is Unboundend (Dual is unfeasible)")  # il problema è impraticabile
 
         self.x[l] += alpha * self.dx[l]
-        self.x[B] += alpha * self.dx[self.B]
+        self.x[self.B] += alpha * self.dx[self.B]
         self.y    += alpha * self.dy
         self.z[l] += alpha * self.dz[l]
-        self.z[N] += alpha * self.dz[self.N]
-        if z[l] + r[l] < 0:
+        self.z[self.N] += alpha * self.dz[self.N]
+        
+        if self.z[l] + self.r[l] < 0: #effettivamente anche alpha == alpha_max ha senso
+            print("k:", k)
             self.B[k] = False
             self.N[k] = True
         
-        print ("x:\n", x)
-        print ("y:\n", y)
-        print ("z:\n", z)
-        print ("B:\n", B)
-        print ("N:\n", N)
+        print ("x:\n", self.x)
+        print ("y:\n", self.y)
+        print ("z:\n", self.z)
+        print ("B:\n", self.B)
+        print ("N:\n", self.N)
         print ()
         return
 
@@ -254,39 +262,46 @@ class quadratic_problem:
         print ()
         # robo da risolvere
         self.dx[l], self.dx[self.B], self.dy[:] = tmp_sol[0], tmp_sol[1: B_size +1], -tmp_sol[B_size + 1:]
+        print("delta x:\n", self.dx)
+        print("delta y:\n", self.dy)
 
         self.dz[N] = (
-            self.H[self.N][:, l] * self.dx[l] #scalare 
-            + np.matmul(self.H[self.B][:, self.N].T, self.dx[self.B]) #moltiplicazione #Nx#B per #Bx1
-            - np.matmul(self.A[:, self.N].T, self.dy) # moltiplicazione #Nxm per #mx1
+              self.H[self.N][:, l]        * self.dx[l] #scalare 
+            + self.H[self.B][:, self.N].T @ self.dx[self.B] #moltiplicazione #Nx#B per #Bx1
+            - self.A[:, self.N].T         @ self.dy # moltiplicazione #Nxm per #mx1
         )
-        print("delta z\tN")
-        print(self.dz, "\t", self.N)
+        print("delta z\n")
         print()
         
         alpha_opt = -(self.z[l] + self.r[l])
         min_mask = ( self.dx < 0 )  # in realtà da rivedere perché questo è di dimensione #B, quindi c'è da aumentare sta maschera o qualcosa del genere
-        to_min = (self.x[min_mask] + self.q[min_mask]) / -self.dx[min_mask]
-        k = np.argmin(to_min)
-        alpha_max = to_min[k]
+        if np.sum(min_mask) == 0:
+            alpha_max = np.inf
+        else:
+            to_min = (self.x[min_mask] + self.q[min_mask]) / -self.dx[min_mask]
+            k = np.argmin(to_min)
+            alpha_max = to_min[k]
 
         alpha = min(alpha_opt, alpha_max)
-        print ("alpha = min (", alpha_opt, "; ", alpha_max, "); k = ", k)
+        print ("alpha = min (", alpha_opt, "; ", alpha_max, ");")
         print()
         
         self.x[l] += alpha * self.dx[l]
-        self.x[B] += alpha * self.dx[self.B]
+        self.x[self.B] += alpha * self.dx[self.B]
         self.y    += alpha * self.dy
         self.z[l] += alpha * self.dz[l]
-        self.z[N] += alpha * self.dz[N]
-        if z[l] + self.r[l] < 0:
+        self.z[self.N] += alpha * self.dz[N]
+        
+        if self.z[l] + self.r[l] < 0:
+            print("k:\n", k)
             self.B[k] = False
             self.N[k] = True
-        print ("x:\n", x)
-        print ("y:\n", y)
-        print ("z:\n", z)
-        print ("B:\n", B)
-        print ("N:\n", N)
+        
+        print ("x:\n", self.x)
+        print ("y:\n", self.y)
+        print ("z:\n", self.z)
+        print ("B:\n", self.B)
+        print ("N:\n", self.N)
         print ()
         return
 
@@ -294,14 +309,15 @@ class quadratic_problem:
 
 
 if __name__ == "__main__":
-    A = np.array([ [1, 1], [2, 1] ])
-    b = np.array([2, 3])
-    c = np.array([2, 3])
-    H = np.array([ [-2, 0], [0, -2] ])
-    M = np.zeros((2, 2))
+    n, m = 4, 6
+    A = np.eye(m, n)
+    M = np.eye(m, m)
+    H = np.eye(n, n)
+    b = np.array([ 1., 1., 2., 2., 0., 0.])
+    c = np.array([-1.,-1., 1., 1.])
     qp = quadratic_problem (A, b, c, H, M)
-    x = np.array([1, 0])
-    y = np.zeros(2)
-    z = np.array([0, -1])
+    x = np.array([1., 1., 0., 0.])
+    y = np.array([0., 0., 2., 2., 0., 0.])
+    z = np.array([0., 0.,-1.,-1.])
     qp.primal_active_set(x, y, z)
     pass
