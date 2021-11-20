@@ -138,7 +138,7 @@ class quadratic_problem:
                        self.H[self.B, :][:, self.N] @ self.x[self.N] +
                        self.c[self.B] -
                        self.A[:, self.B].T @ self.y - self.z[self.B])
-        self.logger.info(f"H[bb]x[b] + H[bn]x[n] + c[b] - A[b].Ty - z[b]: {condition_2}") 
+        self.logger.info(f"H[bb]x[b]:\n{self.H[self.B, :][:, self.B]} + H[bn]x[n]:\n{self.H[self.B, :][:, self.N]} + c[b] - A[b].Ty - z[b]: {condition_2}") 
         assert np.allclose(condition_2, 0, rtol=self.tol), condition_2
         condition_3 = (self.H[self.B, :][:, self.N].T @ self.x[self.B] + 
                        self.H[self.N, :][:, self.N]   @ self.x[self.N] + self.c[self.N] - 
@@ -162,7 +162,7 @@ class quadratic_problem:
 
         B_size = np.sum(self.B)
         K_I = np.block([
-            [self.H[self.B, :][:, self.N], self.A[:, self.B].T ],
+            [self.H[self.B, :][:, self.B], self.A[:, self.B].T ],
             [self.A[:, self.B],           -self.M]
         ])
         tmp_b = np.concatenate(
@@ -180,8 +180,6 @@ class quadratic_problem:
                           self.c[self.N] -
                           self.A[:, self.N].T @ self.y)
         
-#        self.x[self.B] = np.max((self.x[self.B], -self.q[self.B]), axis=1)
-#        self.z[self.N] = np.max((self.z[self.N], -self.r[self.N]), axis=1)
         self.q[self.B] = np.where(self.x[self.B] > 0, self.x[self.B], 0)
         self.r[self.N] = np.where(self.z[self.N] > 0, self.z[self.N], 0)
         
