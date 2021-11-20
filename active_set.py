@@ -106,6 +106,9 @@ class quadratic_problem:
         self.logger.info(f"Successfully set the initial active set:\nB:\n{self.B}\nN:\n{self.N}")
 
     def reset_deltas (self):
+        """! Function that reset the deltas values to 0
+       
+        """
         self.dx.fill(0)
         self.dy.fill(0)
         self.dz.fill(0)
@@ -131,9 +134,11 @@ class quadratic_problem:
         condition_1 = self.A @ self.x + self.M @ self.y - self.b
         self.logger.info(f"Ax + My - b: {condition_1}")
         assert np.allclose(condition_1, 0, rtol=self.tol), condition_1
-        condition_2 = (self.H[self.B]      @ self.x + self.c[self.B] - 
+        condition_2 = (self.H[self.B, :][:, self.B] @ self.x[self.B] +
+                       self.H[self.B, :][:, self.N] @ self.x[self.N] +
+                       self.c[self.B] -
                        self.A[:, self.B].T @ self.y - self.z[self.B])
-        self.logger.info(f"H[b]x + c[b] - A[b].Ty - z[b]: {condition_2}") 
+        self.logger.info(f"H[bb]x[b] + H[bn]x[n] + c[b] - A[b].Ty - z[b]: {condition_2}") 
         assert np.allclose(condition_2, 0, rtol=self.tol), condition_2
         condition_3 = (self.H[self.B, :][:, self.N].T @ self.x[self.B] + 
                        self.H[self.N, :][:, self.N]   @ self.x[self.N] + self.c[self.N] - 
@@ -150,6 +155,38 @@ class quadratic_problem:
         self.logger.info(f"x[b] + q[b] >= 0: {condition_6}") 
         assert np.allclose(condition_6, True, rtol=self.tol), condition_6
         return True
+
+    def set_initial_solution_from_primal_conditions (self): #section 5.2 del paper
+        self.x[self.N] = -self.q[self.N] #condition 5 
+        self.z[self.B] = -self.r[self.B] #condition 4
+
+        B_size = np.sum(self.B)
+        K_I = np.block([
+            [self.H[self.B, :][:, self.N], self.A[:, self.B].T ],
+            [self.A[:, self.B],           -self.M]
+        ])
+        tmp_b = np.concatenate(
+            (self.H[self.B, :][:, self.N] @ self.q[self.N] - self.c[self.B] - self.r[self.B],
+             self.A[:, self.N] @ self.q[self.N] + self.b),
+            axis = 0
+        )
+        print(f"K_I:\n{K_I}\nB:\n{tmp_b}")
+
+        sol = np.linalg.solve(K_I, tmp_b).reshape((B_size + self.y.size,))
+        self.x[self.B], self.y = sol[:B_size], -sol[B_size:]
+
+        self.z[self.N] = (self.H[self.B, :][:, self.N].T @ self.x[self.B] -
+                          self.H[self.N, :][:, self.N]   @ self.q[self.N] +
+                          self.c[self.N] -
+                          self.A[:, self.N].T @ self.y)
+        
+#        self.x[self.B] = np.max((self.x[self.B], -self.q[self.B]), axis=1)
+#        self.z[self.N] = np.max((self.z[self.N], -self.r[self.N]), axis=1)
+        self.q[self.B] = np.where(self.x[self.B] > 0, self.x[self.B], 0)
+        self.r[self.N] = np.where(self.z[self.N] > 0, self.z[self.N], 0)
+        
+        self.logger.info(f"x:\n{self.x}\ny:\n{self.y}\nz:\n{self.z}")
+        
     
     def test_dual_feasible(self):
         """! Function that check if the current solution satisfy the condition to be a feasible solution for the Dual problem
@@ -591,7 +628,7 @@ if __name__ == "__main__":
     n, m = 4, 6
 
     A = np.eye(m, n)
-    A[2, 1] = 1
+#    A[2, 1] = 1
     M = np.eye(m, m)
     H = np.eye(n, n)
     
@@ -605,10 +642,12 @@ if __name__ == "__main__":
     B = np.array([True, True, False, False])
     N = ~B
     
-    qp.set_initial_solution(x, y, z)
+    #qp.set_initial_solution(x, y, z)
     qp.set_initial_active_set(B, N)
+    qp.set_initial_solution_from_primal_conditions()
+    qp.test_primal_feasible()
     #qp.primal_active_set()
     #qp.dual_active_set()
-    qp.general_active_set()
-    print(qp.get_solution())
+    #qp.general_active_set()
+    #print(qp.get_solution())
     pass
