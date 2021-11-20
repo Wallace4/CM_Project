@@ -3,9 +3,21 @@
 
 import numpy as np
 import math
+import logging
+import sys
 
 
 class quadratic_problem:
+
+    @staticmethod
+    def __check_shape(x, dim=None, varname=""):
+        if isinstance(x, np.ndarray):
+            if dim == None or x.shape == dim:
+                return x
+            else:
+                raise TypeError(f'<{varname}> has shape <{x.shape}> expected <{dim}>')
+        else:
+            raise TypeError(f'<{varname}> is not {type({np.ndarray})}')
     """
     Costruttore del problema quadratico del tipo:
     min(x, y) = c.T * x + 1/2 * x.T * H * x + 1/2 * y.T * M * y 
@@ -25,29 +37,31 @@ class quadratic_problem:
      - r il vettore di vincoli per il problema duale R(n). default=0
     """
 
-    def __init__(self, A, b, c, H, M, q=None, r=None, tol=1e-8):
-        def check_shape(x, dim=None, varname=""):
-            if isinstance(x, np.ndarray):
-                if dim == None or x.shape == dim:
-                    return x
-                else:
-                    raise TypeError(f'<{varname}> has shape <{x.shape}> expected <{dim}>')
-            else:
-                raise TypeError(f'<{varname}> is not {type({np.ndarray})}')
-
+    def __init__(self, A, b, c, H, M, q=None, r=None, tol=1e-8, verbouse=False):
+        self.logger = logging.getLogger('execution_logger')
+        self.logger.setLevel(logging.DEBUG)
+        fh = logging.FileHandler ("execution.log")
+        fh.setLevel(logging.DEBUG)
+        self.logger.addHandler(fh)
+#        logging.basicConfig (filename = 'execution.log', encoding='utf-8', level = logging.DEBUG)
+        if verbouse:
+            handler = logging.StreamHandler(sys.stdout)
+            handler.setLevel(logging.DEBUG)
+            self.logger.addHandler(handler)
+        self.logger.info('Class created with success and started the logger')
         self.tol = tol
         
         # shape of A is assumed to be correct
-        self.A = check_shape(A, varname="A")
+        self.A = self.__check_shape(A, varname="A")
         m, n = A.shape
 
-        self.b = check_shape(b, dim=(m,), varname="b")
-        self.c = check_shape(c, dim=(n,), varname="c")
-        self.H = check_shape(H, dim=(n, n), varname="H")
-        self.M = check_shape(M, dim=(m, m), varname="M")
+        self.b = self.__check_shape(b, dim=(m,), varname="b")
+        self.c = self.__check_shape(c, dim=(n,), varname="c")
+        self.H = self.__check_shape(H, dim=(n, n), varname="H")
+        self.M = self.__check_shape(M, dim=(m, m), varname="M")
 
-        self.q = check_shape(q, dim=(n,), varname="q") if q else np.zeros(n)
-        self.r = check_shape(r, dim=(n,), varname="r") if r else np.zeros(n)
+        self.q = self.__check_shape(q, dim=(n,), varname="q") if q else np.zeros(n)
+        self.r = self.__check_shape(r, dim=(n,), varname="r") if r else np.zeros(n)
 
         # init solutions
         self.x = np.zeros(n)
@@ -62,7 +76,7 @@ class quadratic_problem:
         # init B, N (temporary)
         self.B = np.full(n, True)
         self.N = np.full(n, False)
-
+        
     """
     funzione per calcolare il problema primale degli active set
 
@@ -72,9 +86,8 @@ class quadratic_problem:
      - (x, y, z): tripla di punti ottimali della soluzione
     """
     def primal_active_set(self, x, y, z):
-        print("-"*20)
-        print("Starting the resolution of the Primal Problem of the Active Sets")
-        print()
+        self.logger.info("-"*20)
+        self.logger.info(f"Starting the resolution of the Primal Problem of the Active Sets")
 
         # --------------- parte in cui si decidono gli x, y, z e B e N
         self.x = x
@@ -82,32 +95,35 @@ class quadratic_problem:
         self.z = z
         sum_xq = self.x + self.q
         sum_zr = self.z + self.r
-        print ("sum_xq: ", sum_xq)
-        print ("sum_zr: ", sum_zr)
+        
+        self.logger.info(f"sum_xq: {sum_xq}")
+        self.logger.info(f"sum_zr: {sum_zr}")
+
         self.N = (
             sum_xq
         ) == 0  # dovrebbe restituire un vettore di veri e falsi. Also da fare che non sia == 0 ma in una certa epsilon.
         self.B = (
             sum_zr
         ) == 0  # come sopra
-        print("N: ", self.N)
-        print("B, ", self.B)
+        
+        self.logger.info(f"N:\n{self.N}")
+        self.logger.info(f"B:\n{self.B}")
         # --------------- controllo che abbiamo preso cose sensate
         if all(np.logical_xor(self.B, self.N)) == False:
-            print ("Errore nella scelta di x, y, z")
+            self.logger.error("Error in the choice of x, y, z: they don't respect the conditions")
             return None  # ci sono degli elementi che sono sia in N che in B.
         if any((sum_xq) < 0):
-            print ("Errore nella scelta di x, y, z, ma con la somma")
+            self.logger.error("Error in the choice of x, y, z: the sum of x and q doesn't make sense")
             return None  # non soddisfa una delle condizioni.
         # --------------- Inizio loop principale
         while True:
             l_list = np.argwhere((self.z - self.r) < 0)
             print ("l: ", l_list.flatten())
             if l_list.size == 0:
-                print ("Processo terminato")
-                print ("x: ", self.x)
-                print ("y: ", self.y)
-                print ("z: ", self.z)
+                self.logger.info(f"The primal algorith just terminated his course. The solutions are as follows:")
+                self.logger.info(f"x:\n{self.x}")
+                self.logger.info(f"y:\n{self.y}")
+                self.logger.info(f"z:\n{self.z}")
                 return (
                     self.x,
                     self.y,
@@ -117,7 +133,7 @@ class quadratic_problem:
             self.N[l] = False  # prendo il primo elemento di l e lo levo da N.
             self.primal_base(l)
             while (self.z[l] + self.r[l]) < 0:
-                input("premi per continuare...")
+                #input("premi per continuare...")
                 self.primal_intermediate(l)
             self.B[l] = True
 
@@ -133,39 +149,35 @@ class quadratic_problem:
     returns: (B, N, x, y, z) i valori aggiornati
     """
     def primal_base(self, l):
-        print ("-"*20)
-        print ("Iterazione base del problema usando l'indice: ", l)
-        print ()
+        self.logger.info("-"*20)
+        self.logger.info(f"Base iteration of the Primal Problem, with the index: {l}")
         
         self.dx[l] = 1.
         B_size = np.sum((self.B))
         
-        print ("Hbb:\n", self.H[self.B, :][:, self.B])
-        print ("Ab:\n", self.A[:, self.B])
-        print ("M:\n", self.M)
+        self.logger.info(f"Hbb:\n{self.H[self.B, :][:, self.B]}")
+        self.logger.info(f"Ab:\n{self.A[:, self.B]}")
+        self.logger.info(f"M:\n{self.M}")
         K_I = np.block ([
             [self.H[self.B, :][:, self.B], self.A[:, self.B].T],
             [self.A[:, self.B],           -self.M             ],
         ])
-        print ("K_I:\n", K_I)
-        print ()
+        self.logger.info(f"K_I:\n{K_I}")
 
-        print ("Hb:\n", self.H[self.B][:, l])
-        print ("Al:\n", self.A[:, l])
+        self.logger.info(f"Hb:\n{self.H[self.B][:, l]}")
+        self.logger.info(f"Al:\n{self.A[:, l]}")
         tmp_b = -np.concatenate(
             (self.H[self.B][:, l], self.A[:, l]),
             axis=0
         )
-        print ("b:\n", tmp_b)
-        print ()
+        self.logger.info(f"b:\n{tmp_b}")
         
         tmp_sol = np.linalg.solve(K_I, tmp_b).reshape((B_size + self.y.size,)) #da cambiare
-        print ("sol:\n", tmp_sol)
-        print ()
+        self.logger.info(f"sol:\n{tmp_sol}")
         
         self.dx[self.B], self.dy[:] = tmp_sol[:B_size], -tmp_sol[B_size:]
-        print("delta x:\n", self.dx)
-        print("detla y:\n", self.dy)
+        self.logger.info(f"delta x:\n{self.dx}")
+        self.logger.info(f"detla y:\n{self.dy}")
 
         self.dz[self.N] = (
               self.H[self.N, l]           * self.dx[l] #qui * va bene perché delta_x_l è uno scalare
@@ -177,8 +189,7 @@ class quadratic_problem:
             + self.H[self.B][:, l].T @ self.dx[self.B] # qui è un vettore 1x#B per #B
             - self.A[:, l].T         @ self.dy # qui è 1xm per mx1
         )
-        print("delta z:\n", self.dz)
-        print()
+        self.logger.info(f"delta z:\n{self.dz}")
 
         alpha_opt = math.inf if np.allclose(self.dx[l], 0, rtol=self.tol) else -(self.z[l] + self.r[l]) / self.dz[l]
 
@@ -191,10 +202,10 @@ class quadratic_problem:
             alpha_max = to_min[k]
 
         alpha = min(alpha_opt, alpha_max)
-        print ("alpha = min (", alpha_opt, "; ", alpha_max, ");")
-        print ()
+        self.logger.info(f"alpha = min ({alpha_opt}; {alpha_max});")
         
         if np.isinf(alpha):
+            self.logger.exception(f"Primal is Unbounded (Dual is unfeasible")
             raise Exception("Primal is Unboundend (Dual is unfeasible)")  # il problema è impraticabile
 
         self.x[l] += alpha * self.dx[l]
@@ -204,16 +215,15 @@ class quadratic_problem:
         self.z[self.N] += alpha * self.dz[self.N]
         
         if self.z[l] + self.r[l] < 0: #effettivamente anche alpha == alpha_max ha senso
-            print("k:", k)
+            self.logger.info(f"k:{k}")
             self.B[k] = False
             self.N[k] = True
         
-        print ("x:\n", self.x)
-        print ("y:\n", self.y)
-        print ("z:\n", self.z)
-        print ("B:\n", self.B)
-        print ("N:\n", self.N)
-        print ()
+        self.logger.info(f"x:\n{self.x}")
+        self.logger.info(f"y:\n{self.y}")
+        self.logger.info(f"z:\n{self.z}")
+        self.logger.info(f"B:\n{self.B}")
+        self.logger.info(f"N:\n{self.N}")
         return
 
     """
@@ -229,49 +239,44 @@ class quadratic_problem:
     """
 
     def primal_intermediate(self, B, N, l, x, y, z):
-        print("-"*20)
-        print("Passo intermendio del problema usando l'indice: ", l)
-        print()
+        self.logger.info(f"-"*20)
+        self.logger.info(f"Passo intermendio del problema usando l'indice: {l}")
         
         self.dz[l] = 1
         B_size = np.sum((self.B))
 
-        print("Hll:\n", self.H[l, l])
-        print("HBl:\n", self.H[self.B][:, l])
-        print("Hbb:\n", self.H[self.B][:, self.B])
-        print("Al:\n", self.A[l, :])
-        print("Ab:\n", self.A[self.B, :])
-        print("M:\n", self.M)
+        self.logger.info(f"Hll:\n{self.H[l, l]}")
+        self.logger.info(f"HBl:\n{self.H[self.B][:, l]}")
+        self.logger.info(f"Hbb:\n{self.H[self.B][:, self.B]}")
+        self.logger.info(f"Al:\n{self.A[l, :]}")
+        self.logger.info(f"Ab:\n{self.A[self.B, :]}")
+        self.logger.info(f"M:\n{self.M}")
         K_I = np.block([
             [self.H[l, l],         self.H[self.B, l].T,       self.A[l, :]    ],
             [self.H[self.B][:, l], self.H[self.B][:, self.B], self.A[self.B].T],
             [self.A[l, :],         self.A[self.B, :],         -self.M]
         ])
-        print("K_I:\n", K_I)
-        print()
+        self.logger.info(f"K_I:\n{K_I}")
         
         tmp_b = np.concatenate(
             np.ones(1),
             np.zeros(B_size + self.y.size)
         )
-        print("b:\n", tmp_b)
-        print()
+        self.logger.info(f"b:\n{tmp_b}")
         
         tmp_sol = np.linalg.solve(K_I, tmp_b)
-        print ("sol: ", tmp_sol)
-        print ()
+        self.logger.info(f"sol:\n{tmp_sol}")
         # robo da risolvere
         self.dx[l], self.dx[self.B], self.dy[:] = tmp_sol[0], tmp_sol[1: B_size +1], -tmp_sol[B_size + 1:]
-        print("delta x:\n", self.dx)
-        print("delta y:\n", self.dy)
+        self.logger.info(f"delta x:\n{self.dx}")
+        self.logger.info(f"delta y:\n{self.dy}")
 
         self.dz[N] = (
               self.H[self.N][:, l]        * self.dx[l] #scalare 
             + self.H[self.B][:, self.N].T @ self.dx[self.B] #moltiplicazione #Nx#B per #Bx1
             - self.A[:, self.N].T         @ self.dy # moltiplicazione #Nxm per #mx1
         )
-        print("delta z\n")
-        print()
+        self.logger.info(f"delta z\n{self.dz}")
         
         alpha_opt = -(self.z[l] + self.r[l])
         min_mask = ( self.dx < 0 )  # in realtà da rivedere perché questo è di dimensione #B, quindi c'è da aumentare sta maschera o qualcosa del genere
@@ -283,8 +288,7 @@ class quadratic_problem:
             alpha_max = to_min[k]
 
         alpha = min(alpha_opt, alpha_max)
-        print ("alpha = min (", alpha_opt, "; ", alpha_max, ");")
-        print()
+        self.logger.info(f"alpha = min ( {alpha_opt}; {alpha_max});")
         
         self.x[l] += alpha * self.dx[l]
         self.x[self.B] += alpha * self.dx[self.B]
@@ -293,16 +297,15 @@ class quadratic_problem:
         self.z[self.N] += alpha * self.dz[N]
         
         if self.z[l] + self.r[l] < 0:
-            print("k:\n", k)
+            self.logger.info(f"k:\n{k}")
             self.B[k] = False
             self.N[k] = True
         
-        print ("x:\n", self.x)
-        print ("y:\n", self.y)
-        print ("z:\n", self.z)
-        print ("B:\n", self.B)
-        print ("N:\n", self.N)
-        print ()
+        self.logger.info(f"x:\n{self.x}")
+        self.logger.info(f"y:\n{self.y}")
+        self.logger.info(f"z:\n{self.z}")
+        self.logger.info(f"B:\n{self.B}")
+        self.logger.info(f"N:\n{self.N}")
         return
 
     # kind of a mess but ok
