@@ -179,16 +179,19 @@ class quadratic_problem:
             pdb[0] = self.test_primal_feasible()
             self.logger.info(f"The current set of variables is feasible for a Primal algorithm")
             self.primal_active_set()
+            return True
         except AssertionError as err:
             self.logger.error(f"The current set of variables is not feasible for a Priaml algorithm")
         try:
             pdb[1] = self.test_dual_feasible()
             self.logger.info(f"The current set of variables is feasible for a Dual algorithm")
             self.dual_active_set()
+            return True
         except AssertionError as err:
             self.logger.error(f"The current set of variables is not feasible for a Dual algorithm")
         if not any(pdb):
             self.logger.error(f"The current set of variables is not feasible for any algorithm")
+            return False
     
     def primal_active_set(self):
         """! Function that start the active set Primal Algorithm
@@ -395,8 +398,6 @@ class quadratic_problem:
         """
         self.logger.info("-"*20)
         self.logger.info(f"Starting the resolution of the Dual Problem of the Active Sets")
-
-        res = self.test_dual_feasible()
         
         # --------------- Inizio loop principale
         while True:
@@ -594,13 +595,13 @@ if __name__ == "__main__":
     M = np.eye(m, m)
     H = np.eye(n, n)
     
-    b = np.array([-1.,-1., 0., 0., 0., 0.])
-    c = np.array([ 1., 1., 1., 1.])
+    b = np.array([ 1., 1., 2., 2., 0., 0.])
+    c = np.array([-1., 3., 1., 1.])
     qp = quadratic_problem (A, b, c, H, M, verbose = True)
 
-    x = np.array([-1.,-1., 0., 0.])
-    y = np.array([ 0., 0., 0., 0., 0., 0.])
-    z = np.array([ 0., 0., 1., 1.])
+    x = np.array([ 1., 0., 0., 0.])
+    y = np.array([ 0., 1., 2., 2., 0., 0.])
+    z = np.array([ 0., 0.,-1.,-1.])
     B = np.array([True, True, False, False])
     N = ~B
     
