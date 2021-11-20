@@ -6,11 +6,22 @@ import math
 import logging
 import sys
 
-
 class quadratic_problem:
+    """! The quadratic problem class
+    
+    Define the base class used to resolve the active set algorithms for quadratic problems
+    """
 
     @staticmethod
     def __check_shape(x, dim=None, varname=""):
+        """! Static methot for checking the shape of the matrixes and vectors
+
+        @param x the np.array that need to be checked
+        @param dim the dimension that the vector should have, defaults to "None"
+        @param varname the name of the variable, defaults to ""
+
+        @return x if the dim is right
+        """
         if isinstance(x, np.ndarray):
             if dim == None or x.shape == dim:
                 return x
@@ -18,33 +29,27 @@ class quadratic_problem:
                 raise TypeError(f'<{varname}> has shape <{x.shape}> expected <{dim}>')
         else:
             raise TypeError(f'<{varname}> is not {type({np.ndarray})}')
-    """
-    Costruttore del problema quadratico del tipo:
-    min(x, y) = c.T * x + 1/2 * x.T * H * x + 1/2 * y.T * M * y 
-    dati: A * x + M * y = b, x >= 0
 
-    consideriamo che
-    x = R(n)
-    y = R(m)
-    z = R(n)
-    params:
-     - A La matrice dei vincoli R(m x n)
-     - b il vettore dei vincoli R(m)
-     - c il vettore R(n)
-     - H la matrice di del problema, di solito una matrice hessiana. è positiva, simmetrica e semidefinita R(n x n)
-     - M la matrice relativa alla seconda variabile. Se è 0, il problema è un problema convesso quadratico convenzionale. R(m x m)
-     - q il vettore di vincoli per il problema primale R(n). default=0
-     - r il vettore di vincoli per il problema duale R(n). default=0
-    """
+    def __init__(self, A, b, c, H, M, q=None, r=None, tol=1e-8, verbose=False):
+        """! The Quadratic Problem Class initializer
 
-    def __init__(self, A, b, c, H, M, q=None, r=None, tol=1e-8, verbouse=False):
+        @param A matrix R(m,n)
+        @param b vector R(m)
+        @param c vector R(n)
+        @param H Positive Symmetric Hessian Matrix R(n,n)
+        @param M Positive Symmetric Hessian Matrix R(m,m)
+        @param q vector R(n), default to np.zeros(n)
+        @param r vector R(n), default to np.zeros(n)
+        @param tol maximum tolerance for operations, defaults to 1e-8
+        @param verbose if we want to log to the stdout too or not, default to False
+        """
         self.logger = logging.getLogger('execution_logger')
         self.logger.setLevel(logging.DEBUG)
-        fh = logging.FileHandler ("execution.log")
+        fh = logging.FileHandler ("execution.log", mode='w')
         fh.setLevel(logging.DEBUG)
         self.logger.addHandler(fh)
-#        logging.basicConfig (filename = 'execution.log', encoding='utf-8', level = logging.DEBUG)
-        if verbouse:
+        
+        if verbose:
             handler = logging.StreamHandler(sys.stdout)
             handler.setLevel(logging.DEBUG)
             self.logger.addHandler(handler)
@@ -76,51 +81,111 @@ class quadratic_problem:
         # init B, N (temporary)
         self.B = np.full(n, True)
         self.N = np.full(n, False)
-        
-    """
-    funzione per calcolare il problema primale degli active set
 
-    params:
-     - (x, y, z): tripla di punti su cui iniziare l'algoritmo
-    returns:
-     - (x, y, z): tripla di punti ottimali della soluzione
-    """
-    def primal_active_set(self, x, y, z):
+    def set_initial_solution(self, x, y, z):
+        """! Function that set the initial solution of the problem
+        
+        @param x initial values of the x vector R(n)
+        @param y initial values of the y vector R(m)
+        @param z initial values of the z vector R(n)
+        """
+        self.x[:] = self.__check_shape(x, dim=(n,), varname="x")
+        self.y[:] = self.__check_shape(y, dim=(m,), varname="y")
+        self.z[:] = self.__check_shape(z, dim=(n,), varname="z")
+        self.logger.info(f"Successfully set the initial solutions:\nx:\n{self.x}\ny:\n{self.y}\nz:\n{self.z}")
+        
+    def set_initial_active_set(self, B, N):
+        """! Function that set the initial active set of the problem
+        
+        @param B initial values of B boolean vector R(n)
+        @param N initial values of N boolean vector R(n)
+        """
+        assert all(np.logical_xor(B, N)), "Sets are not valid. |Union| should be n and |Intersection| should be 0"
+        self.B[:] = self.__check_shape(B, dim=(n,), varname="B")
+        self.N[:] = self.__check_shape(N, dim=(n,), varname="N")
+        self.logger.info(f"Successfully set the initial active set:\nB:\n{self.B}\nN:\n{self.N}")
+
+    def get_solution(self):
+        """! Function that return the solution of the Quadratic Problem
+
+        @return The result of the problem [ cx + 0.5x.THx + 0.5y.TMy ] with the current solution that satisfy the constrains [Ax + My = b ] and [x >= 0]
+        """
+        constraint_AMb = self.A @ self.x + self.M @ self.y - self.b
+        assert np.allclose(constraint_AMb, 0, rtol=self.tol), constraint_AMb
+        constraint_x = (self.x >= 0)
+        assert np.allclose(constraint_x, True, rtol=self.tol), constraint_x
+        sol = self.c @ self.x + 0.5* self.x.T @ self.H @ self.x + 0.5 * self.y.T @ self.M @ self.y
+        self.logger.info(f"The solution of the system is: {sol}")
+        return sol
+
+    def test_primal_feasible(self):
+        """! Function that check if the current solution satisfy the condition to be a feasible solution for the Primal problem
+
+        @return True if every condition is satisfied
+        """
+        condition_1 = self.A @ self.x + self.M @ self.y - self.b
+        self.logger.info(f"Ax + My - b: {condition_1}")
+        assert np.allclose(condition_1, 0, rtol=self.tol), condition_1
+        condition_2 = (self.H[self.B]      @ self.x + self.c[self.B] - 
+                       self.A[:, self.B].T @ self.y - self.z[self.B])
+        self.logger.info(f"H[b]x + c[b] - A[b].Ty - z[b]: {condition_2}") 
+        assert np.allclose(condition_2, 0, rtol=self.tol), condition_2
+        condition_3 = (self.H[self.B, :][:, self.N].T @ self.x[self.B] + 
+                       self.H[self.N, :][:, self.N]   @ self.x[self.N] + self.c[self.N] - 
+                       self.A[:, self.N].T            @ self.y         - self.z[self.N])
+        self.logger.info(f"H[bn].Tx + H[nn]x + c[n] + A[n].Ty - z[n]: {condition_3}") 
+        assert np.allclose(condition_3, 0, rtol=self.tol), condition_3
+        condition_4 = self.z[self.B] + self.r[self.B]
+        self.logger.info(f"z[b] + r[b]: {condition_4}") 
+        assert np.allclose(condition_4, 0, rtol=self.tol), condition_4
+        condition_5 = self.x[self.N] + self.q[self.N]
+        self.logger.info(f"x[n] + q[n]: {condition_5}") 
+        assert np.allclose(condition_5, 0, rtol=self.tol), condition_5
+        condition_6 = (self.x[self.B] + self.q[self.B] >= 0)
+        self.logger.info(f"x[b] + q[b] >= 0: {condition_6}") 
+        assert np.allclose(condition_6, True, rtol=self.tol), condition_6
+        return True
+    
+    def test_dual_feasible(self):
+        """! Function that check if the current solution satisfy the condition to be a feasible solution for the Dual problem
+        
+        @return True if every condition is satisfied
+        """
+        condition_1 = self.H @ self.x + self.c - A.T @ self.y - self.z
+        self.logger.info(f"Hx + c - A.Ty - z: {condition_1}") 
+        assert np.allclose(condition_1, 0, rtol=self.tol), condition_1
+        condition_2 = self.A @ self.x + self.M @ self.y - self.b
+        self.logger.info(f"Ax + My - b: {condition_2}") 
+        assert np.allclose(condition_2, 0, rtol=self.tol), condition_2
+        condition_3 = self.x[self.N] + self.q[self.N]
+        self.logger.info(f"x[n] + q[n]: {condition_3}") 
+        assert np.allclose(condition_3, 0, rtol=self.tol), condition_3
+        condition_4 = self.z[self.B] + self.r[self.B]
+        self.logger.info(f"z[b] + r[b]: {condition_4}") 
+        assert np.allclose(condition_4, 0, rtol=self.tol), condition_4
+        condition_5 = (self.z[self.N] + self.r[self.N] >= 0)
+        self.logger.info(f"z[n] + r[n] >= 0: {condition_5}") 
+        assert np.allclose(condition_5, True, rtol=self.tol), condition_5
+        return True
+    
+    def primal_active_set(self):
+        """! Function that start the active set Primal Algorithm
+
+        @return x vector R(n) with the optimal solution
+        @return y vector R(m) with the optimal solution
+        @return z vector R(n) with the optimal solution
+        """
         self.logger.info("-"*20)
         self.logger.info(f"Starting the resolution of the Primal Problem of the Active Sets")
 
-        # --------------- parte in cui si decidono gli x, y, z e B e N
-        self.x = x
-        self.y = y
-        self.z = z
-        sum_xq = self.x + self.q
-        sum_zr = self.z + self.r
+        res = self.test_primal_feasible()
         
-        self.logger.info(f"sum_xq: {sum_xq}")
-        self.logger.info(f"sum_zr: {sum_zr}")
-
-        self.N = (
-            sum_xq
-        ) == 0  # dovrebbe restituire un vettore di veri e falsi. Also da fare che non sia == 0 ma in una certa epsilon.
-        self.B = (
-            sum_zr
-        ) == 0  # come sopra
-        
-        self.logger.info(f"N:\n{self.N}")
-        self.logger.info(f"B:\n{self.B}")
-        # --------------- controllo che abbiamo preso cose sensate
-        if all(np.logical_xor(self.B, self.N)) == False:
-            self.logger.error("Error in the choice of x, y, z: they don't respect the conditions")
-            return None  # ci sono degli elementi che sono sia in N che in B.
-        if any((sum_xq) < 0):
-            self.logger.error("Error in the choice of x, y, z: the sum of x and q doesn't make sense")
-            return None  # non soddisfa una delle condizioni.
         # --------------- Inizio loop principale
         while True:
             l_list = np.argwhere((self.z - self.r) < 0)
-            print ("l: ", l_list.flatten())
+            self.logger.info(f"The indexes that violate the constrains are: {l_list.flatten()}")
             if l_list.size == 0:
-                self.logger.info(f"The primal algorith just terminated his course. The solutions are as follows:")
+                self.logger.info(f"The primal algorith just terminated its course. The solutions are as follows:")
                 self.logger.info(f"x:\n{self.x}")
                 self.logger.info(f"y:\n{self.y}")
                 self.logger.info(f"z:\n{self.z}")
@@ -137,18 +202,11 @@ class quadratic_problem:
                 self.primal_intermediate(l)
             self.B[l] = True
 
-    """
-    Funzione di inizializzazione del primale degli active set.
-
-    params:
-    - B: la maschera degli indici della base nella forma [b1, b2, ..., bn] dove bi = [treu/false]
-    - N: la maschera degli indici normali nella forma [n1, n2, ..., nm] dove n1 = [true/false]
-    - l: l'indice che è stato scelto, e che attualmente non è ne in B ne in N
-    - x, y, z: la tripla di punti di cui dobbiamo trovare la nuova iterazione
-
-    returns: (B, N, x, y, z) i valori aggiornati
-    """
     def primal_base(self, l):
+        """! Function that do the base iteration of the Primal problem
+
+        @param l the index that violate the constrain
+        """
         self.logger.info("-"*20)
         self.logger.info(f"Base iteration of the Primal Problem, with the index: {l}")
         
@@ -226,21 +284,13 @@ class quadratic_problem:
         self.logger.info(f"N:\n{self.N}")
         return
 
-    """
-    Il passo intermedio che viene fatto dal problema primale
+    def primal_intermediate(self, l):
+        """! Function that do the intermediate step of the Primal problem
 
-    params:
-    - B: la maschera degli indici della base nella forma [b1, b2, ..., bn] dove bi = [treu/false]
-    - N: la maschera degli indici normali nella forma [n1, n2, ..., nm] dove n1 = [true/false]
-    - l: l'indice che è stato scelto, e che attualmente non è ne in B ne in N 
-    - x, y, z: la tripla di punti di cui dobbiamo trovare la nuova iterazione                                                    
-
-    returns: (B, N, x, y, z) i valori aggiornati
-    """
-
-    def primal_intermediate(self, B, N, l, x, y, z):
+        @param l the index that violate the constrain
+        """
         self.logger.info(f"-"*20)
-        self.logger.info(f"Passo intermendio del problema usando l'indice: {l}")
+        self.logger.info(f"Intermediate step of the Primal problem, done with the index: {l}")
         
         self.dz[l] = 1
         B_size = np.sum((self.B))
@@ -313,14 +363,22 @@ class quadratic_problem:
 
 if __name__ == "__main__":
     n, m = 4, 6
+
     A = np.eye(m, n)
     M = np.eye(m, m)
     H = np.eye(n, n)
     b = np.array([ 1., 1., 2., 2., 0., 0.])
     c = np.array([-1.,-1., 1., 1.])
     qp = quadratic_problem (A, b, c, H, M)
+
     x = np.array([1., 1., 0., 0.])
     y = np.array([0., 0., 2., 2., 0., 0.])
     z = np.array([0., 0.,-1.,-1.])
-    qp.primal_active_set(x, y, z)
+    B = np.array([True, True, False, False])
+    N = ~B
+    
+    qp.set_initial_solution(x, y, z)
+    qp.set_initial_active_set(B, N)
+    qp.primal_active_set()
+    print(qp.get_solution())
     pass
