@@ -105,6 +105,11 @@ class quadratic_problem:
         self.N[:] = self.__check_shape(N, dim=(n,), varname="N")
         self.logger.info(f"Successfully set the initial active set:\nB:\n{self.B}\nN:\n{self.N}")
 
+    def reset_deltas (self):
+        self.dx.fill(0)
+        self.dy.fill(0)
+        self.dz.fill(0)
+
     def get_solution(self):
         """! Function that return the solution of the Quadratic Problem
 
@@ -197,9 +202,11 @@ class quadratic_problem:
             l = l_list[0]
             self.N[l] = False  # prendo il primo elemento di l e lo levo da N.
             self.primal_base(l)
+            self.reset_deltas()
             while (self.z[l] + self.r[l]) < 0:
-                #input("premi per continuare...")
+                input("premi per continuare...")
                 self.primal_intermediate(l)
+                self.reset_deltas()
             self.B[l] = True
 
     def primal_base(self, l):
@@ -235,7 +242,7 @@ class quadratic_problem:
         
         self.dx[self.B], self.dy[:] = tmp_sol[:B_size], -tmp_sol[B_size:]
         self.logger.info(f"delta x:\n{self.dx}")
-        self.logger.info(f"detla y:\n{self.dy}")
+        self.logger.info(f"delta y:\n{self.dy}")
 
         self.dz[self.N] = (
               self.H[self.N, l]           * self.dx[l] #qui * va bene perché delta_x_l è uno scalare
@@ -252,15 +259,17 @@ class quadratic_problem:
         alpha_opt = math.inf if np.allclose(self.dx[l], 0, rtol=self.tol) else -(self.z[l] + self.r[l]) / self.dz[l]
 
         min_mask = ( self.dx < 0 )
-        if np.sum(min_mask) == 0:
-            alpha_max = np.inf
-        else:
-            to_min = (self.x[min_mask] + self.q[min_mask]) / -self.dx[min_mask]
-            k = np.argmin(to_min)
-            alpha_max = to_min[k]
+        to_min = self.x + self.q
+        to_min[~min_mask] = np.inf
+        to_min[min_mask] = to_min[min_mask]/-self.dx[min_mask]
+        print(f"min_mask: {min_mask}")
+        print(f"x: {self.x[min_mask]} q: {self.q[min_mask]}")
+        self.logger.info(f"to_min:\n{to_min}")
+        k = np.argmin(to_min)
+        alpha_max = to_min[k]
 
         alpha = min(alpha_opt, alpha_max)
-        self.logger.info(f"alpha = min ({alpha_opt}; {alpha_max});")
+        self.logger.info(f"alpha = min ( opt: {alpha_opt}; max: {alpha_max});")
         
         if np.isinf(alpha):
             self.logger.exception(f"Primal is Unbounded (Dual is unfeasible")
@@ -273,7 +282,7 @@ class quadratic_problem:
         self.z[self.N] += alpha * self.dz[self.N]
         
         if self.z[l] + self.r[l] < 0: #effettivamente anche alpha == alpha_max ha senso
-            self.logger.info(f"k:{k}")
+            self.logger.info(f"k: {k}")
             self.B[k] = False
             self.N[k] = True
         
@@ -298,47 +307,49 @@ class quadratic_problem:
         self.logger.info(f"Hll:\n{self.H[l, l]}")
         self.logger.info(f"HBl:\n{self.H[self.B][:, l]}")
         self.logger.info(f"Hbb:\n{self.H[self.B][:, self.B]}")
-        self.logger.info(f"Al:\n{self.A[l, :]}")
-        self.logger.info(f"Ab:\n{self.A[self.B, :]}")
+        self.logger.info(f"Al:\n{self.A[:, l]}")
+        self.logger.info(f"Ab:\n{self.A[:, self.B]}")
         self.logger.info(f"M:\n{self.M}")
         K_I = np.block([
-            [self.H[l, l],         self.H[self.B, l].T,       self.A[l, :]    ],
-            [self.H[self.B][:, l], self.H[self.B][:, self.B], self.A[self.B].T],
-            [self.A[l, :],         self.A[self.B, :],         -self.M]
+            [self.H[l, l],         self.H[self.B, l].T,       self.A[:, l].T     ],
+            [self.H[self.B][:, l], self.H[self.B][:, self.B], self.A[:, self.B].T],
+            [self.A[:, l],         self.A[:, self.B],         -self.M]
         ])
         self.logger.info(f"K_I:\n{K_I}")
         
-        tmp_b = np.concatenate(
+        tmp_b = np.concatenate((
             np.ones(1),
-            np.zeros(B_size + self.y.size)
+            np.zeros(B_size + self.y.size))
         )
         self.logger.info(f"b:\n{tmp_b}")
         
-        tmp_sol = np.linalg.solve(K_I, tmp_b)
+        tmp_sol = np.linalg.solve(K_I, tmp_b).reshape((1+B_size+self.y.size,))
         self.logger.info(f"sol:\n{tmp_sol}")
         # robo da risolvere
         self.dx[l], self.dx[self.B], self.dy[:] = tmp_sol[0], tmp_sol[1: B_size +1], -tmp_sol[B_size + 1:]
         self.logger.info(f"delta x:\n{self.dx}")
         self.logger.info(f"delta y:\n{self.dy}")
 
-        self.dz[N] = (
-              self.H[self.N][:, l]        * self.dx[l] #scalare 
+        self.dz[self.N] = (
+              self.H[self.N, l]           * self.dx[l] #scalare 
             + self.H[self.B][:, self.N].T @ self.dx[self.B] #moltiplicazione #Nx#B per #Bx1
-            - self.A[:, self.N].T         @ self.dy # moltiplicazione #Nxm per #mx1
+            - self.A[:, self.N].T         @ self.dy[:] # moltiplicazione #Nxm per #mx1
         )
         self.logger.info(f"delta z\n{self.dz}")
         
         alpha_opt = -(self.z[l] + self.r[l])
-        min_mask = ( self.dx < 0 )  # in realtà da rivedere perché questo è di dimensione #B, quindi c'è da aumentare sta maschera o qualcosa del genere
-        if np.sum(min_mask) == 0:
-            alpha_max = np.inf
-        else:
-            to_min = (self.x[min_mask] + self.q[min_mask]) / -self.dx[min_mask]
-            k = np.argmin(to_min)
-            alpha_max = to_min[k]
+        min_mask = ( self.dx < 0 )
+        to_min = self.x + self.q
+        to_min[~min_mask] = np.inf
+        to_min[min_mask] = to_min[min_mask]/-self.dx[min_mask]
+        print(f"min_mask: {min_mask}")
+        print(f"x: {self.x[min_mask]} q: {self.q[min_mask]}")
+        self.logger.info(f"to_min:\n{to_min}")
+        k = np.argmin(to_min)
+        alpha_max = to_min[k]
 
         alpha = min(alpha_opt, alpha_max)
-        self.logger.info(f"alpha = min ( {alpha_opt}; {alpha_max});")
+        self.logger.info(f"alpha = min ( opt = {alpha_opt}; max = {alpha_max});")
         
         self.x[l] += alpha * self.dx[l]
         self.x[self.B] += alpha * self.dx[self.B]
@@ -347,7 +358,7 @@ class quadratic_problem:
         self.z[self.N] += alpha * self.dz[N]
         
         if self.z[l] + self.r[l] < 0:
-            self.logger.info(f"k:\n{k}")
+            self.logger.info(f"k: {k}")
             self.B[k] = False
             self.N[k] = True
         
@@ -365,14 +376,16 @@ if __name__ == "__main__":
     n, m = 4, 6
 
     A = np.eye(m, n)
+    A[2, 1] = 1
     M = np.eye(m, m)
     H = np.eye(n, n)
+    
     b = np.array([ 1., 1., 2., 2., 0., 0.])
-    c = np.array([-1.,-1., 1., 1.])
-    qp = quadratic_problem (A, b, c, H, M)
+    c = np.array([-1., 3., 1., 1.])
+    qp = quadratic_problem (A, b, c, H, M, verbose = True)
 
-    x = np.array([1., 1., 0., 0.])
-    y = np.array([0., 0., 2., 2., 0., 0.])
+    x = np.array([1., 0., 0., 0.])
+    y = np.array([0., 1., 2., 2., 0., 0.])
     z = np.array([0., 0.,-1.,-1.])
     B = np.array([True, True, False, False])
     N = ~B
