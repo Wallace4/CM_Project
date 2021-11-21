@@ -65,8 +65,8 @@ class quadratic_problem:
         self.H = self.__check_shape(H, dim=(n, n), varname="H")
         self.M = self.__check_shape(M, dim=(m, m), varname="M")
 
-        self.q = self.__check_shape(q, dim=(n,), varname="q") if q else np.zeros(n)
-        self.r = self.__check_shape(r, dim=(n,), varname="r") if r else np.zeros(n)
+        self.q = self.__check_shape(q, dim=(n,), varname="q") if q is not None else np.zeros(n)
+        self.r = self.__check_shape(r, dim=(n,), varname="r") if r is not None else np.zeros(n)
 
         # init solutions
         self.x = np.zeros(n)
@@ -89,6 +89,7 @@ class quadratic_problem:
         @param y initial values of the y vector R(m)
         @param z initial values of the z vector R(n)
         """
+        m, n = self.A.shape
         self.x[:] = self.__check_shape(x, dim=(n,), varname="x")
         self.y[:] = self.__check_shape(y, dim=(m,), varname="y")
         self.z[:] = self.__check_shape(z, dim=(n,), varname="z")
@@ -101,6 +102,7 @@ class quadratic_problem:
         @param N initial values of N boolean vector R(n)
         """
         assert all(np.logical_xor(B, N)), "Sets are not valid. |Union| should be n and |Intersection| should be 0"
+        n = self.A.shape[1]
         self.B[:] = self.__check_shape(B, dim=(n,), varname="B")
         self.N[:] = self.__check_shape(N, dim=(n,), varname="N")
         self.logger.info(f"Successfully set the initial active set:\nB:\n{self.B}\nN:\n{self.N}")
@@ -196,7 +198,7 @@ class quadratic_problem:
         
         @return True if every condition is satisfied
         """
-        condition_1 = self.H @ self.x + self.c - A.T @ self.y - self.z
+        condition_1 = self.H @ self.x + self.c - self.A.T @ self.y - self.z
         self.logger.info(f"Hx + c - A.Ty - z: {condition_1}") 
         assert np.allclose(condition_1, 0, rtol=self.tol), condition_1
         condition_2 = self.A @ self.x + self.M @ self.y - self.b
@@ -393,6 +395,10 @@ class quadratic_problem:
             self.logger.exception(f"Primal is Unbounded (Dual is unfeasible")
             raise Exception("Primal is Unboundend (Dual is unfeasible)")  # il problema è impraticabile
 
+        if np.isclose(alpha, 0, rtol=self.tol):
+            self.logger.exception(f"Step size is zero")
+            raise Exception("Step size is zero")
+
         self.x[l] += alpha * self.dx[l]
         self.x[self.B] += alpha * self.dx[self.B]
         self.y    += alpha * self.dy
@@ -468,6 +474,10 @@ class quadratic_problem:
 
         alpha = min(alpha_opt, alpha_max)
         self.logger.info(f"alpha = min ( opt = {alpha_opt}; max = {alpha_max});")
+        
+        if np.isclose(alpha, 0, rtol=self.tol):
+            self.logger.exception(f"Step size is zero")
+            raise Exception("Step size is zero")
         
         self.x[l] += alpha * self.dx[l]
         self.x[self.B] += alpha * self.dx[self.B]
@@ -580,8 +590,12 @@ class quadratic_problem:
         self.logger.info(f"alpha = min ( opt = {alpha_opt}; max = {alpha_max});")
 
         if np.isinf(alpha):
-            self.logger.exception(f"Dual is Unbounded (Primal is unfeasible")
+            self.logger.exception(f"Dual is Unbounded (Primal is unfeasible)")
             raise Exception("Dual is Unboundend (Primal is unfeasible)")
+        
+        if np.isclose(alpha, 0, rtol=self.tol):
+            self.logger.exception(f"Step size is zero")
+            raise Exception("Step size is zero")
         
         self.x[l] += alpha * self.dx[l]
         self.x[self.B] += alpha * self.dx[self.B]
@@ -666,6 +680,10 @@ class quadratic_problem:
         if np.isinf(alpha):
             self.logger.exception(f"Dual is Unbounded (Primal is unfeasible")
             raise Exception("Dual is Unboundend (Primal is unfeasible)")  # il problema è impraticabile
+            
+        if np.isclose(alpha, 0, rtol=self.tol):
+            self.logger.exception(f"Step size is zero")
+            raise Exception("Step size is zero")
 
         self.x[l] += alpha * self.dx[l]
         self.x[self.B] += alpha * self.dx[self.B]
