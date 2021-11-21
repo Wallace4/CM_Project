@@ -650,10 +650,10 @@ class quadratic_problem:
 
         alpha_opt = -(self.x[l] + self.q[l])
 
-        min_mask = ( self.dx < 0 )
+        min_mask = ( self.dz < 0 )
         to_min = self.z + self.r
         to_min[~min_mask] = np.inf
-        to_min[min_mask] = to_min[min_mask]/-self.dx[min_mask]
+        to_min[min_mask] = to_min[min_mask]/-self.dz[min_mask]
         print(f"min_mask: {min_mask}")
         print(f"x: {self.x[min_mask]} q: {self.q[min_mask]}")
         self.logger.info(f"to_min:\n{to_min}")
@@ -686,18 +686,20 @@ class quadratic_problem:
         return
 
 if __name__ == "__main__":
-    n, m = 4, 6
+    n, m = 100, 200
+    np.random.seed(2021)
 
-    A = np.eye(m, n)
-    A[2, 1] = 1
-    M = np.eye(m, m)
-    H = np.eye(n, n)
+    A = 2*(np.random.rand(m, n)-np.random.rand(m, n))
+    M = 100*np.eye(m) + np.random.rand(m, m)
+    M = M @ M.T
+    H = 100*np.eye(n) + np.random.rand(n, n)
+    H = H @ H.T
     
-    b = np.array([-1.,-1., 2., 0., 0., 0.])
-    c = np.array([ 1., 1., 1., 1.])
+    b = np.random.rand(m)
+    c = np.random.rand(n)
     qp = quadratic_problem (A, b, c, H, M, verbose = True)
 
-    B = np.array([True, True, False, False])
+    B = (np.random.rand(n) - np.random.rand(n)) > 0
     N = ~B
     
     print(qp.dual_first_strategy(B, N))
