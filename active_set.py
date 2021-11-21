@@ -138,7 +138,7 @@ class quadratic_problem:
                        self.H[self.B, :][:, self.N] @ self.x[self.N] +
                        self.c[self.B] -
                        self.A[:, self.B].T @ self.y - self.z[self.B])
-        self.logger.info(f"H[bb]x[b]:\n{self.H[self.B, :][:, self.B]} + H[bn]x[n]:\n{self.H[self.B, :][:, self.N]} + c[b] - A[b].Ty - z[b]: {condition_2}") 
+        self.logger.info(f"H[bb]x[b]: + H[bn]x[n]:\n + c[b] - A[b].Ty - z[b]: {condition_2}") 
         assert np.allclose(condition_2, 0, rtol=self.tol), condition_2
         condition_3 = (self.H[self.B, :][:, self.N].T @ self.x[self.B] + 
                        self.H[self.N, :][:, self.N]   @ self.x[self.N] + self.c[self.N] - 
@@ -156,9 +156,12 @@ class quadratic_problem:
         assert np.allclose(condition_6, True, rtol=self.tol), condition_6
         return True
 
-    def set_initial_solution_from_primal_conditions (self): #section 5.2 del paper
-        self.x[self.N] = -self.q[self.N] #condition 5 
-        self.z[self.B] = -self.r[self.B] #condition 4
+    def set_initial_solution_from_basis (self): #section 5.2 del paper
+        """! Function that calculate the initial solution for the primal problem
+        
+        """
+        self.x[self.N] = -self.q[self.N]
+        self.z[self.B] = -self.r[self.B]
 
         B_size = np.sum(self.B)
         K_I = np.block([
@@ -170,7 +173,6 @@ class quadratic_problem:
              self.A[:, self.N] @ self.q[self.N] + self.b),
             axis = 0
         )
-        print(f"K_I:\n{K_I}\nB:\n{tmp_b}")
 
         sol = np.linalg.solve(K_I, tmp_b).reshape((B_size + self.y.size,))
         self.x[self.B], self.y = sol[:B_size], -sol[B_size:]
@@ -179,11 +181,14 @@ class quadratic_problem:
                           self.H[self.N, :][:, self.N]   @ self.q[self.N] +
                           self.c[self.N] -
                           self.A[:, self.N].T @ self.y)
+
+        max_q = np.where(-self.x[self.B] > 0, -self.x[self.B], 0)
+        max_r = np.where(-self.z[self.N] > 0, -self.z[self.N], 0)
+        self.q[self.B] = np.where(self.q[self.B] > max_q, self.q[self.B], max_q)
+        self.r[self.N] = np.where(self.r[self.N] > max_r, self.r[self.N], max_r)
         
-        self.q[self.B] = np.where(self.x[self.B] > 0, self.x[self.B], 0)
-        self.r[self.N] = np.where(self.z[self.N] > 0, self.z[self.N], 0)
-        
-        self.logger.info(f"x:\n{self.x}\ny:\n{self.y}\nz:\n{self.z}")
+        self.logger.info(f"the generated solutions from the B and N sets are:\nx:\n{self.x}\ny:\n{self.y}\nz:\n{self.z}")
+        self.logger.info(f"the new constrains vectors are:\nq:\n{self.q}\nr:\n{self.r}")
         
     
     def test_dual_feasible(self):
@@ -209,24 +214,84 @@ class quadratic_problem:
         return True
 
     def general_active_set (self):
-        pdb = np.array([False, False])
+        """! Function that do the primal or dual algorith given the feasibility of the initial solution
+        
+        @return True if he found and executed a feasible algorith
+        @return False if the initial solution isn't feasible for any algorithm
+        """
         try:
-            pdb[0] = self.test_primal_feasible()
+            self.test_primal_feasible()
             self.logger.info(f"The current set of variables is feasible for a Primal algorithm")
             self.primal_active_set()
             return True
         except AssertionError as err:
             self.logger.error(f"The current set of variables is not feasible for a Priaml algorithm")
         try:
-            pdb[1] = self.test_dual_feasible()
+            self.test_dual_feasible()
             self.logger.info(f"The current set of variables is feasible for a Dual algorithm")
             self.dual_active_set()
             return True
         except AssertionError as err:
             self.logger.error(f"The current set of variables is not feasible for a Dual algorithm")
-        if not any(pdb):
-            self.logger.error(f"The current set of variables is not feasible for any algorithm")
-            return False
+
+        self.logger.error(f"The current set of variables is not feasible for any algorithm")
+        return False
+
+    def primal_first_strategy(self, B, N):
+        """! Function that do the Primal Shift Strategy
+
+        @param B the basis vector
+        @param N the basis vector opposite
+
+        @return self.get_solution on the optimal solutions found
+        """
+
+        self.logger.info(f"-"*20)
+        self.logger.info(f"Starting the primal first Strategy for solving the original problem with shifts")
+        self.logger.info(f"Initializing the sets and the variables")
+        self.set_initial_active_set(B, N)
+        self.set_initial_solution_from_basis()
+
+        self.logger.info(f"Resetting the r vector and starting the primal problem")
+        self.r.fill(0)
+        self.test_primal_feasible()
+        self.primal_active_set()
+
+        self.logger.info(f"Resetting the q vector and starting the dual problem")
+        self.q.fill(0)
+        self.test_dual_feasible()
+        self.dual_active_set()
+
+        self.logger.info(f"The Primal Shift Strategy ended with success")
+        return self.get_solution()
+
+    def dual_first_strategy(self, B, N):
+        """! FUnction that does the Dual First Strategy
+
+        @param B the basis vector
+        @param N the basis vector opposite
+
+        @return self.get_solution of the optimal solution found
+        """
+
+        self.logger.info(f"-"*20)
+        self.logger.info(f"Starting the dual first Strategy for solving the original problem with shifts")
+        self.logger.info(f"Initializing the sets and the variables")
+        self.set_initial_active_set(B, N)
+        self.set_initial_solution_from_basis()
+
+        self.logger.info(f"Resetting the q vector and starting the dual problem")
+        self.q.fill(0)
+        self.test_dual_feasible()
+        self.dual_active_set()
+
+        self.logger.info(f"Resetting the r vector and starting the primal problem")
+        self.r.fill(0)
+        self.test_primal_feasible()
+        self.primal_active_set()
+
+        self.logger.info(f"The Dual Shift Strategy ended with success")
+        return self.get_solution()
     
     def primal_active_set(self):
         """! Function that start the active set Primal Algorithm
@@ -237,8 +302,6 @@ class quadratic_problem:
         """
         self.logger.info("-"*20)
         self.logger.info(f"Starting the resolution of the Primal Problem of the Active Sets")
-
-        res = self.test_primal_feasible()
         
         # --------------- Inizio loop principale
         while True:
@@ -626,26 +689,16 @@ if __name__ == "__main__":
     n, m = 4, 6
 
     A = np.eye(m, n)
-#    A[2, 1] = 1
+    A[2, 1] = 1
     M = np.eye(m, m)
     H = np.eye(n, n)
     
-    b = np.array([ 1., 1., 2., 2., 0., 0.])
-    c = np.array([-1., 3., 1., 1.])
+    b = np.array([-1.,-1., 2., 0., 0., 0.])
+    c = np.array([ 1., 1., 1., 1.])
     qp = quadratic_problem (A, b, c, H, M, verbose = True)
 
-    x = np.array([ 1., 0., 0., 0.])
-    y = np.array([ 0., 1., 2., 2., 0., 0.])
-    z = np.array([ 0., 0.,-1.,-1.])
     B = np.array([True, True, False, False])
     N = ~B
     
-    #qp.set_initial_solution(x, y, z)
-    qp.set_initial_active_set(B, N)
-    qp.set_initial_solution_from_primal_conditions()
-    qp.test_primal_feasible()
-    #qp.primal_active_set()
-    #qp.dual_active_set()
-    #qp.general_active_set()
-    #print(qp.get_solution())
+    print(qp.dual_first_strategy(B, N))
     pass
