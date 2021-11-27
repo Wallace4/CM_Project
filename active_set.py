@@ -2,9 +2,20 @@
 # coding=utf-8
 
 import numpy as np
+from scipy.linalg import lu, solve, ldl
+from scipy.sparse.linalg import splu, spsolve
 import math
 import logging
 import sys
+
+def solve_plin (A, b):
+#    A_i = np.linalg.pinv (A)
+    P, L, U = lu (A)
+    c = np.linalg.pinv(L) @ b
+    x = np.linalg.pinv(U) @ c
+    print(P)
+    return x
+#    return solve (A, b)
 
 class quadratic_problem:
     """! The quadratic problem class
@@ -30,7 +41,7 @@ class quadratic_problem:
         else:
             raise TypeError(f'<{varname}> is not {type({np.ndarray})}')
 
-    def __init__(self, A, b, c, H, M, q=None, r=None, tol=1e-8, verbose=False):
+    def __init__(self, A, b, c, H, M, q=None, r=None, tol=1e-16, verbose=False):
         """! The Quadratic Problem Class initializer
 
         @param A matrix R(m,n)
@@ -64,6 +75,9 @@ class quadratic_problem:
         self.c = self.__check_shape(c, dim=(n,), varname="c")
         self.H = self.__check_shape(H, dim=(n, n), varname="H")
         self.M = self.__check_shape(M, dim=(m, m), varname="M")
+
+        rank = np.linalg.matrix_rank(np.block([A, -M]), tol=self.tol)
+        assert (rank == m), f"Not full row rank matrix, {rank} != {m}"
 
         self.q = self.__check_shape(q, dim=(n,), varname="q") if q is not None else np.zeros(n)
         self.r = self.__check_shape(r, dim=(n,), varname="r") if r is not None else np.zeros(n)
@@ -106,6 +120,27 @@ class quadratic_problem:
         self.B[:] = self.__check_shape(B, dim=(n,), varname="B")
         self.N[:] = self.__check_shape(N, dim=(n,), varname="N")
         self.logger.info(f"Successfully set the initial active set:\nB:\n{self.B}\nN:\n{self.N}")
+
+    def set_initial_active_set_from_factorization (self):
+        K = np.block([
+            [self.H,  self.A.T],
+            [self.A, -self.M  ]
+        ])
+        L, D, P = ldl(K)
+
+        last_ele = -1
+        for ele in P:
+            i = ele+1
+            if (last_ele > ele):
+                break
+        print(P)
+        for ele in P[i:]: #di default B è tutto vero, e N è tutto falso
+            print(ele)
+            self.B[ele] = False
+            self.N[ele] = True
+        assert all(np.logical_xor(B,N)), "Sets are not valid. |Union| should be n and |Intersection| should be 0"
+        self.logger.info(f"Successfully set the initial active set:\nB:\n{self.B}\nN:\n{self.N}")
+        print(P)
 
     def reset_deltas (self):
         """! Function that reset the deltas values to 0
@@ -165,6 +200,8 @@ class quadratic_problem:
         self.x[self.N] = -self.q[self.N]
         self.z[self.B] = -self.r[self.B]
 
+#        self.logger.info(f"x[N]:\n{self.x[self.N]}\nq[N]:\n{self.q[self.N]}")
+
         B_size = np.sum(self.B)
         K_I = np.block([
             [self.H[self.B, :][:, self.B], self.A[:, self.B].T ],
@@ -176,7 +213,12 @@ class quadratic_problem:
             axis = 0
         )
 
-        sol = np.linalg.solve(K_I, tmp_b).reshape((B_size + self.y.size,))
+        sol = solve_plin(K_I, tmp_b).reshape((B_size + self.y.size,))
+
+#        self.logger.info(f"K_i @ x = b:\n{K_I}\n{sol}\n{tmp_b}")
+#        cond = np.allclose (K_I @ sol, tmp_b, rtol=self.tol)
+#        self.logger.info(f"cond:\n{K_I @ sol}\n{cond}")
+        
         self.x[self.B], self.y = sol[:B_size], -sol[B_size:]
 
         self.z[self.N] = (self.H[self.B, :][:, self.N].T @ self.x[self.B] -
@@ -239,21 +281,45 @@ class quadratic_problem:
         self.logger.error(f"The current set of variables is not feasible for any algorithm")
         return False
 
-    def primal_first_strategy(self, B, N):
-        """! Function that do the Primal Shift Strategy
+    def solve (self):
+        """! Function that do the primal first strategy or dual first strategy given the feasibility of the initial solution
 
+        @return True if he found and executed a feasible algorith
+        @return False if the initial solution isn't feasible for any algorithm
+        """
+        self.set_initial_active_set_from_factorization()
+        self.set_initial_solution_from_basis()
+        try:
+            self.test_primal_feasible()
+            self.logger.info(f"The current set of variables is feasible for a Primal First algorithm")
+            self.primal_first_strategy()
+            return True
+        except AssertionError as err:
+            self.logger.error(f"The current set of variables is not feasible for a Primal First algorithm")
+        try:
+            self.test_dual_feasible()
+            self.logger.info(f"The current set of variables is feasible for a Dual First algorithm")
+            self.dual_first_strategy()
+            return True
+        except AssertionError as err:
+            self.logger.error(f"The current set of variables is not feasible for a Dual First algorithm")
+
+        self.logger.error(f"The current set of variables is not feasible for any algorithm")
+        return False
+
+    def primal_first_strategy(self):
+        """! Function that do the Primal Shift Strategy
         @param B the basis vector
         @param N the basis vector opposite
-
         @return self.get_solution on the optimal solutions found
         """
-
         self.logger.info(f"-"*20)
         self.logger.info(f"Starting the primal first Strategy for solving the original problem with shifts")
         self.logger.info(f"Initializing the sets and the variables")
-        self.set_initial_active_set(B, N)
-        self.set_initial_solution_from_basis()
-
+#        self.set_initial_active_set(B, N)
+#        self.set_initial_active_set_from_factorization()
+#        self.set_initial_solution_from_basis()
+        
         self.logger.info(f"Resetting the r vector and starting the primal problem")
         self.r.fill(0)
         self.test_primal_feasible()
@@ -267,7 +333,7 @@ class quadratic_problem:
         self.logger.info(f"The Primal Shift Strategy ended with success")
         return self.get_solution()
 
-    def dual_first_strategy(self, B, N):
+    def dual_first_strategy(self):
         """! FUnction that does the Dual First Strategy
 
         @param B the basis vector
@@ -279,8 +345,9 @@ class quadratic_problem:
         self.logger.info(f"-"*20)
         self.logger.info(f"Starting the dual first Strategy for solving the original problem with shifts")
         self.logger.info(f"Initializing the sets and the variables")
-        self.set_initial_active_set(B, N)
-        self.set_initial_solution_from_basis()
+#        self.set_initial_active_set(B, N)
+#        self.set_initial_active_set_from_factorization()
+#        self.set_initial_solution_from_basis()
 
         self.logger.info(f"Resetting the q vector and starting the dual problem")
         self.q.fill(0)
@@ -357,7 +424,7 @@ class quadratic_problem:
         )
         self.logger.info(f"b:\n{tmp_b}")
         
-        tmp_sol = np.linalg.solve(K_I, tmp_b).reshape((B_size + self.y.size,)) #da cambiare
+        tmp_sol = solve_plin(K_I, tmp_b).reshape((B_size + self.y.size,)) #da cambiare
         self.logger.info(f"sol:\n{tmp_sol}")
         
         self.dx[self.B], self.dy[:] = tmp_sol[:B_size], -tmp_sol[B_size:]
@@ -447,7 +514,7 @@ class quadratic_problem:
         )
         self.logger.info(f"b:\n{tmp_b}")
         
-        tmp_sol = np.linalg.solve(K_I, tmp_b).reshape((1+B_size+self.y.size,))
+        tmp_sol = solve_plin(K_I, tmp_b).reshape((1+B_size+self.y.size,))
         self.logger.info(f"sol:\n{tmp_sol}")
         # robo da risolvere
         self.dx[l], self.dx[self.B], self.dy[:] = tmp_sol[0], tmp_sol[1: B_size +1], -tmp_sol[B_size + 1:]
@@ -561,7 +628,7 @@ class quadratic_problem:
         )
         self.logger.info(f"b:\n{tmp_b}")
         
-        tmp_sol = np.linalg.solve(K_I, tmp_b).reshape((1+B_size+self.y.size,))
+        tmp_sol = solve_plin(K_I, tmp_b).reshape((1+B_size+self.y.size,))
         self.logger.info(f"sol:\n{tmp_sol}")
         # robo da risolvere
         self.dx[l], self.dx[self.B], self.dy[:] = tmp_sol[0], tmp_sol[1: B_size +1], -tmp_sol[B_size + 1:]
@@ -643,7 +710,7 @@ class quadratic_problem:
         )
         self.logger.info(f"b:\n{tmp_b}")
         
-        tmp_sol = np.linalg.solve(K_I, tmp_b).reshape((B_size + self.y.size,)) #da cambiare
+        tmp_sol = solve_plin(K_I, tmp_b).reshape((B_size + self.y.size,)) #da cambiare
         self.logger.info(f"sol:\n{tmp_sol}")
         
         self.dx[self.B], self.dy[:] = tmp_sol[:B_size], -tmp_sol[B_size:]
@@ -710,6 +777,7 @@ if __name__ == "__main__":
     A = 2*(np.random.rand(m, n)-np.random.rand(m, n))
     M = 100*np.eye(m) + np.random.rand(m, m)
     M = M @ M.T
+#    M = np.zeros((m, m))
     H = 100*np.eye(n) + np.random.rand(n, n)
     H = H @ H.T
     
@@ -720,5 +788,5 @@ if __name__ == "__main__":
     B = (np.random.rand(n) - np.random.rand(n)) > 0
     N = ~B
     
-    print(qp.dual_first_strategy(B, N))
+#    print(qp.solve())
     pass
