@@ -17,6 +17,11 @@ def solve_plin (A, b):
     return x
 #    return solve (A, b)
 
+def norm_2 (exp):
+    norm = np.linalg.norm(exp, 2)
+    print(norm)
+    return pow(norm, 2)
+
 class quadratic_problem:
     """! The quadratic problem class
     
@@ -156,7 +161,7 @@ class quadratic_problem:
         @return The result of the problem [ cx + 0.5x.THx + 0.5y.TMy ] with the current solution that satisfy the constrains [Ax + My = b ] and [x >= 0]
         """
         constraint_AMb = self.A @ self.x + self.M @ self.y - self.b
-        assert np.allclose(constraint_AMb, 0, rtol=self.tol), constraint_AMb
+        assert np.allclose(norm_2(constraint_AMb), 0, rtol=self.tol), constraint_AMb
         constraint_x = (self.x >= 0)
         assert np.allclose(constraint_x, True, rtol=self.tol), constraint_x
         sol = self.c @ self.x + 0.5* self.x.T @ self.H @ self.x + 0.5 * self.y.T @ self.M @ self.y
@@ -170,24 +175,24 @@ class quadratic_problem:
         """
         condition_1 = self.A @ self.x + self.M @ self.y - self.b
         self.logger.info(f"Ax + My - b: {condition_1}")
-        assert np.allclose(condition_1, 0, rtol=self.tol), condition_1
+        assert np.allclose(norm_2(condition_1), 0, rtol=self.tol), condition_1
         condition_2 = (self.H[self.B, :][:, self.B] @ self.x[self.B] +
                        self.H[self.B, :][:, self.N] @ self.x[self.N] +
                        self.c[self.B] -
                        self.A[:, self.B].T @ self.y - self.z[self.B])
         self.logger.info(f"H[bb]x[b]: + H[bn]x[n]:\n + c[b] - A[b].Ty - z[b]: {condition_2}") 
-        assert np.allclose(condition_2, 0, rtol=self.tol), condition_2
+        assert np.allclose(norm_2(condition_2), 0, rtol=self.tol), condition_2
         condition_3 = (self.H[self.B, :][:, self.N].T @ self.x[self.B] + 
                        self.H[self.N, :][:, self.N]   @ self.x[self.N] + self.c[self.N] - 
                        self.A[:, self.N].T            @ self.y         - self.z[self.N])
         self.logger.info(f"H[bn].Tx + H[nn]x + c[n] + A[n].Ty - z[n]: {condition_3}") 
-        assert np.allclose(condition_3, 0, rtol=self.tol), condition_3
+        assert np.allclose(norm_2(condition_3), 0, rtol=self.tol), condition_3
         condition_4 = self.z[self.B] + self.r[self.B]
         self.logger.info(f"z[b] + r[b]: {condition_4}") 
-        assert np.allclose(condition_4, 0, rtol=self.tol), condition_4
+        assert np.allclose(norm_2(condition_4), 0, rtol=self.tol), condition_4
         condition_5 = self.x[self.N] + self.q[self.N]
         self.logger.info(f"x[n] + q[n]: {condition_5}") 
-        assert np.allclose(condition_5, 0, rtol=self.tol), condition_5
+        assert np.allclose(norm_2(condition_5), 0, rtol=self.tol), condition_5
         condition_6 = (self.x[self.B] + self.q[self.B] >= 0)
         self.logger.info(f"x[b] + q[b] >= 0: {condition_6}") 
         assert np.allclose(condition_6, True, rtol=self.tol), condition_6
@@ -242,16 +247,16 @@ class quadratic_problem:
         """
         condition_1 = self.H @ self.x + self.c - self.A.T @ self.y - self.z
         self.logger.info(f"Hx + c - A.Ty - z: {condition_1}") 
-        assert np.allclose(condition_1, 0, rtol=self.tol), condition_1
+        assert np.allclose(norm_2(condition_1), 0, rtol=self.tol), condition_1
         condition_2 = self.A @ self.x + self.M @ self.y - self.b
         self.logger.info(f"Ax + My - b: {condition_2}") 
-        assert np.allclose(condition_2, 0, rtol=self.tol), condition_2
+        assert np.allclose(norm_2(condition_2), 0, rtol=self.tol), condition_2
         condition_3 = self.x[self.N] + self.q[self.N]
         self.logger.info(f"x[n] + q[n]: {condition_3}") 
-        assert np.allclose(condition_3, 0, rtol=self.tol), condition_3
+        assert np.allclose(norm_2(condition_3), 0, rtol=self.tol), condition_3
         condition_4 = self.z[self.B] + self.r[self.B]
         self.logger.info(f"z[b] + r[b]: {condition_4}") 
-        assert np.allclose(condition_4, 0, rtol=self.tol), condition_4
+        assert np.allclose(norm_2(condition_4), 0, rtol=self.tol), condition_4
         condition_5 = (self.z[self.N] + self.r[self.N] >= 0)
         self.logger.info(f"z[n] + r[n] >= 0: {condition_5}") 
         assert np.allclose(condition_5, True, rtol=self.tol), condition_5
@@ -269,7 +274,7 @@ class quadratic_problem:
             self.primal_active_set()
             return True
         except AssertionError as err:
-            self.logger.error(f"The current set of variables is not feasible for a Priaml algorithm")
+            self.logger.error(f"The current set of variables is not feasible for a Primal algorithm")
         try:
             self.test_dual_feasible()
             self.logger.info(f"The current set of variables is feasible for a Dual algorithm")
@@ -281,31 +286,41 @@ class quadratic_problem:
         self.logger.error(f"The current set of variables is not feasible for any algorithm")
         return False
 
-    def solve (self):
+    def solve (self, B=None, N=None):
         """! Function that do the primal first strategy or dual first strategy given the feasibility of the initial solution
 
         @return True if he found and executed a feasible algorith
         @return False if the initial solution isn't feasible for any algorithm
         """
-        self.set_initial_active_set_from_factorization()
+        self.logger.info(f"-"*20)
+        self.logger.info(f"Started generic Solver")
+        self.logger.info(f"Initializing the sets and the variables")
+        if (B is not None and N is not None):
+            self.set_initial_active_set(B, N)
+        else:
+            self.set_initial_active_set_from_factorization()
         self.set_initial_solution_from_basis()
+        old_q = self.q
+        old_r = self.r
         try:
+            self.r.fill(0)
             self.test_primal_feasible()
             self.logger.info(f"The current set of variables is feasible for a Primal First algorithm")
-            self.primal_first_strategy()
-            return True
+            return self.primal_first_strategy()
         except AssertionError as err:
-            self.logger.error(f"The current set of variables is not feasible for a Primal First algorithm")
+            self.r = old_r
+            self.logger.error(f"The current set of variables is not feasible for a Primal First algorithm: {err}")
         try:
+            self.q.fill(0)
             self.test_dual_feasible()
             self.logger.info(f"The current set of variables is feasible for a Dual First algorithm")
-            self.dual_first_strategy()
-            return True
+            return self.dual_first_strategy()
         except AssertionError as err:
-            self.logger.error(f"The current set of variables is not feasible for a Dual First algorithm")
+            self.q = old_q
+            self.logger.error(f"The current set of variables is not feasible for a Dual First algorithm: {err}")
 
         self.logger.error(f"The current set of variables is not feasible for any algorithm")
-        return False
+        return None
 
     def primal_first_strategy(self):
         """! Function that do the Primal Shift Strategy
@@ -315,7 +330,7 @@ class quadratic_problem:
         """
         self.logger.info(f"-"*20)
         self.logger.info(f"Starting the primal first Strategy for solving the original problem with shifts")
-        self.logger.info(f"Initializing the sets and the variables")
+#        self.logger.info(f"Initializing the sets and the variables")
 #        self.set_initial_active_set(B, N)
 #        self.set_initial_active_set_from_factorization()
 #        self.set_initial_solution_from_basis()
@@ -344,7 +359,7 @@ class quadratic_problem:
 
         self.logger.info(f"-"*20)
         self.logger.info(f"Starting the dual first Strategy for solving the original problem with shifts")
-        self.logger.info(f"Initializing the sets and the variables")
+#        self.logger.info(f"Initializing the sets and the variables")
 #        self.set_initial_active_set(B, N)
 #        self.set_initial_active_set_from_factorization()
 #        self.set_initial_solution_from_basis()
@@ -771,7 +786,7 @@ class quadratic_problem:
         return
 
 if __name__ == "__main__":
-    n, m = 100, 200
+    n, m = 200, 100
     np.random.seed(2021)
 
     A = 2*(np.random.rand(m, n)-np.random.rand(m, n))
@@ -788,5 +803,5 @@ if __name__ == "__main__":
     B = (np.random.rand(n) - np.random.rand(n)) > 0
     N = ~B
     
-#    print(qp.solve())
+    print(qp.solve(B, N))
     pass
