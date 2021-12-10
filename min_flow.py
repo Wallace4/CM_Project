@@ -7,28 +7,33 @@ def min_flow_to_qp (Q, E, b, q, u):
     b = b
     c = q
     H = 2 * Q
-    M = np.eye(m,m)
+#    M = np.eye(m,m)
+    M = np.zeros((m,m))
     return A, b, c, H, M
 
-n = m = 6
+n, m = 7, 6
 
-Q = np.zeros((n,m))
-np.fill_diagonal(Q, np.random.rand(n))
-E = np.array([[0., 1., 1., 0., 0., 0.],
-              [0., 0., 1., 1., 0., 0.],
-              [0., 1., 0., 1., 0., 0.],
-              [0., 0., 1., 0., 0., 1.],
-              [0., 0., 0., 1., 0., 1.],
-              [0., 0., 0., 0., 0., 0.]])
-b = 2 * np.ones(m)
-q = np.ones(n)
+Q = np.zeros((n,n))
+#np.fill_diagonal(Q, np.random.rand(n))
+np.fill_diagonal(Q, 1)
+E = np.array([[-1.,-1., 0., 0., 0., 0., 0.],
+              [ 1., 0.,-1., 0., 0., 0., 0.],
+              [ 0., 1., 0.,-1.,-1., 0., 0.],
+              [ 0., 0., 1., 1., 0.,-1., 0.],
+              [ 0., 0., 0., 0., 1., 0.,-1.],
+              [ 0., 0., 0., 0., 0., 1., 1.]])
+print(np.linalg.matrix_rank(E))
+
+b = np.array([ 1., 0., 0., 0., 0., -1])
+q = 2 * np.ones(n)
 u = 3 * np.ones(n)
 
 A, b, c, H, M = min_flow_to_qp(Q, E, b, q, u)
 
 qp = quadratic_problem (A, b, c, H, M, verbose=True)
 
-B = np.array([True, True, False, False, True, False])
+B = np.array([True, False, True, False, True, False, True])
 N = ~B
 
-qp.primal_first_strategy(B, N)
+#qp.set_initial_active_set_from_factorization()
+qp.solve(B, N)
