@@ -1,4 +1,4 @@
-#!bin/usr/python
+#!bin/usr/python3
 # coding=utf-8
 
 import numpy as np
@@ -161,9 +161,9 @@ class quadratic_problem:
         @return The result of the problem [ cx + 0.5x.THx + 0.5y.TMy ] with the current solution that satisfy the constrains [Ax + My = b ] and [x >= 0]
         """
         constraint_AMb = self.A @ self.x + self.M @ self.y - self.b
-        assert np.allclose(norm_2(constraint_AMb), 0, rtol=self.tol), constraint_AMb
+        assert np.allclose(norm_2(constraint_AMb), 0, atol=self.tol), constraint_AMb
         constraint_x = (self.x >= 0)
-        assert np.allclose(constraint_x, True, rtol=self.tol), constraint_x
+        assert np.allclose(constraint_x, True, atol=self.tol), constraint_x
         sol = self.c @ self.x + 0.5* self.x.T @ self.H @ self.x + 0.5 * self.y.T @ self.M @ self.y
         self.logger.info(f"The solution of the system is: {sol}")
         return sol
@@ -175,27 +175,27 @@ class quadratic_problem:
         """
         condition_1 = self.A @ self.x + self.M @ self.y - self.b
         self.logger.info(f"Ax + My - b: {condition_1}")
-        assert np.allclose(norm_2(condition_1), 0, rtol=self.tol), condition_1
+        assert np.allclose(norm_2(condition_1), 0, atol=self.tol), condition_1
         condition_2 = (self.H[self.B, :][:, self.B] @ self.x[self.B] +
                        self.H[self.B, :][:, self.N] @ self.x[self.N] +
                        self.c[self.B] -
                        self.A[:, self.B].T @ self.y - self.z[self.B])
         self.logger.info(f"H[bb]x[b]: + H[bn]x[n]:\n + c[b] - A[b].Ty - z[b]: {condition_2}") 
-        assert np.allclose(norm_2(condition_2), 0, rtol=self.tol), condition_2
+        assert np.allclose(norm_2(condition_2), 0, atol=self.tol), condition_2
         condition_3 = (self.H[self.B, :][:, self.N].T @ self.x[self.B] + 
                        self.H[self.N, :][:, self.N]   @ self.x[self.N] + self.c[self.N] - 
                        self.A[:, self.N].T            @ self.y         - self.z[self.N])
         self.logger.info(f"H[bn].Tx + H[nn]x + c[n] + A[n].Ty - z[n]: {condition_3}") 
-        assert np.allclose(norm_2(condition_3), 0, rtol=self.tol), condition_3
+        assert np.allclose(norm_2(condition_3), 0, atol=self.tol), condition_3
         condition_4 = self.z[self.B] + self.r[self.B]
         self.logger.info(f"z[b] + r[b]: {condition_4}") 
-        assert np.allclose(norm_2(condition_4), 0, rtol=self.tol), condition_4
+        assert np.allclose(norm_2(condition_4), 0, atol=self.tol), condition_4
         condition_5 = self.x[self.N] + self.q[self.N]
         self.logger.info(f"x[n] + q[n]: {condition_5}") 
-        assert np.allclose(norm_2(condition_5), 0, rtol=self.tol), condition_5
+        assert np.allclose(norm_2(condition_5), 0, atol=self.tol), condition_5
         condition_6 = (self.x[self.B] + self.q[self.B] >= 0)
         self.logger.info(f"x[b] + q[b] >= 0: {condition_6}") 
-        assert np.allclose(condition_6, True, rtol=self.tol), condition_6
+        assert np.allclose(condition_6, True, atol=self.tol), condition_6
         return True
 
     def set_initial_solution_from_basis (self): #section 5.2 del paper
@@ -221,7 +221,7 @@ class quadratic_problem:
         sol = solve_plin(K_I, tmp_b).reshape((B_size + self.y.size,))
 
 #        self.logger.info(f"K_i @ x = b:\n{K_I}\n{sol}\n{tmp_b}")
-#        cond = np.allclose (K_I @ sol, tmp_b, rtol=self.tol)
+#        cond = np.allclose (K_I @ sol, tmp_b, atol=self.tol)
 #        self.logger.info(f"cond:\n{K_I @ sol}\n{cond}")
         
         self.x[self.B], self.y = sol[:B_size], -sol[B_size:]
@@ -247,19 +247,19 @@ class quadratic_problem:
         """
         condition_1 = self.H @ self.x + self.c - self.A.T @ self.y - self.z
         self.logger.info(f"Hx + c - A.Ty - z: {condition_1}") 
-        assert np.allclose(norm_2(condition_1), 0, rtol=self.tol), condition_1
+        assert np.allclose(norm_2(condition_1), 0, atol=self.tol), condition_1
         condition_2 = self.A @ self.x + self.M @ self.y - self.b
         self.logger.info(f"Ax + My - b: {condition_2}") 
-        assert np.allclose(norm_2(condition_2), 0, rtol=self.tol), condition_2
+        assert np.allclose(norm_2(condition_2), 0, atol=self.tol), condition_2
         condition_3 = self.x[self.N] + self.q[self.N]
         self.logger.info(f"x[n] + q[n]: {condition_3}") 
-        assert np.allclose(norm_2(condition_3), 0, rtol=self.tol), condition_3
+        assert np.allclose(norm_2(condition_3), 0, atol=self.tol), condition_3
         condition_4 = self.z[self.B] + self.r[self.B]
         self.logger.info(f"z[b] + r[b]: {condition_4}") 
-        assert np.allclose(norm_2(condition_4), 0, rtol=self.tol), condition_4
+        assert np.allclose(norm_2(condition_4), 0, atol=self.tol), condition_4
         condition_5 = (self.z[self.N] + self.r[self.N] >= 0)
         self.logger.info(f"z[n] + r[n] >= 0: {condition_5}") 
-        assert np.allclose(condition_5, True, rtol=self.tol), condition_5
+        assert np.allclose(condition_5, True, atol=self.tol), condition_5
         return True
 
     def general_active_set (self):
@@ -402,9 +402,12 @@ class quadratic_problem:
                     self.z,
                 )  # non si può fare un passo, aka siamo arrivati alla nostra soluzione ottima
             l = l_list[0]
-            self.N[l] = False  # prendo il primo elemento di l e lo levo da N.
-            self.primal_base(l)
-            self.reset_deltas()
+            if (self.N[l] == True):
+                self.N[l] = False  # prendo il primo elemento di l e lo levo da N.
+                self.primal_base(l)
+                self.reset_deltas()
+            else:
+                self.B[l] = False
             while (self.z[l] + self.r[l]) < 0:
                 input("premi per continuare...")
                 self.primal_intermediate(l)
@@ -458,7 +461,7 @@ class quadratic_problem:
         )
         self.logger.info(f"delta z:\n{self.dz}")
 
-        alpha_opt = math.inf if np.allclose(self.dx[l], 0, rtol=self.tol) else -(self.z[l] + self.r[l]) / self.dz[l]
+        alpha_opt = math.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(self.z[l] + self.r[l]) / self.dz[l]
 
         min_mask = ( self.dx < 0 )
         to_min = self.x + self.q
@@ -477,7 +480,7 @@ class quadratic_problem:
             self.logger.exception(f"Primal is Unbounded (Dual is unfeasible")
             raise Exception("Primal is Unboundend (Dual is unfeasible)")  # il problema è impraticabile
 
-        if np.isclose(alpha, 0, rtol=self.tol):
+        if np.isclose(alpha, 0, atol=self.tol):
             self.logger.exception(f"Step size is zero")
             raise Exception("Step size is zero")
 
@@ -557,7 +560,7 @@ class quadratic_problem:
         alpha = min(alpha_opt, alpha_max)
         self.logger.info(f"alpha = min ( opt = {alpha_opt}; max = {alpha_max});")
         
-        if np.isclose(alpha, 0, rtol=self.tol):
+        if np.isclose(alpha, 0, atol=self.tol):
             self.logger.exception(f"Step size is zero")
             raise Exception("Step size is zero")
         
@@ -604,9 +607,12 @@ class quadratic_problem:
                     self.z,
                 )  # non si può fare un passo, aka siamo arrivati alla nostra soluzione ottima
             l = l_list[0]
-            self.B[l] = False  # prendo il primo elemento di l e lo levo da N.
-            self.dual_base(l)
-            self.reset_deltas()
+            if (B[l] == True):
+                self.B[l] = False  # prendo il primo elemento di l e lo levo da N.
+                self.dual_base(l)
+                self.reset_deltas()
+            else:
+                self.N[l] = False
             while (self.x[l] + self.q[l]) < 0:
                 input("premi per continuare...")
                 self.dual_intermediate(l)
@@ -657,7 +663,7 @@ class quadratic_problem:
         )
         self.logger.info(f"delta z\n{self.dz}")
         
-        alpha_opt = np.inf if np.allclose(self.dx[l], 0, rtol=self.tol) else -(self.x[l] + self.q[l])/self.dx[l]
+        alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(self.x[l] + self.q[l])/self.dx[l]
         min_mask = ( self.dz < 0 )
         to_min = self.r + self.z
         to_min[~min_mask] = np.inf
@@ -675,7 +681,7 @@ class quadratic_problem:
             self.logger.exception(f"Dual is Unbounded (Primal is unfeasible)")
             raise Exception("Dual is Unboundend (Primal is unfeasible)")
         
-        if np.isclose(alpha, 0, rtol=self.tol):
+        if np.isclose(alpha, 0, atol=self.tol):
             self.logger.exception(f"Step size is zero")
             raise Exception("Step size is zero")
         
@@ -763,7 +769,7 @@ class quadratic_problem:
             self.logger.exception(f"Dual is Unbounded (Primal is unfeasible")
             raise Exception("Dual is Unboundend (Primal is unfeasible)")  # il problema è impraticabile
             
-        if np.isclose(alpha, 0, rtol=self.tol):
+        if np.isclose(alpha, 0, atol=self.tol):
             self.logger.exception(f"Step size is zero")
             raise Exception("Step size is zero")
 
@@ -786,8 +792,8 @@ class quadratic_problem:
         return
 
 if __name__ == "__main__":
-    n, m = 200, 100
-    np.random.seed(2021)
+    n, m = 10, 20
+    np.random.seed(2033)
 
     A = 2*(np.random.rand(m, n)-np.random.rand(m, n))
     M = 100*np.eye(m) + np.random.rand(m, m)
