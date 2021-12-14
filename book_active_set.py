@@ -23,6 +23,9 @@ class linear_problem:
     def solve(self):
         # fai simplesso e scialla
 
+    def single_step():
+        
+
 class min_flow_problem:
 
     @staticmethod
