@@ -81,7 +81,13 @@ class quadratic_problem:
         self.H = self.__check_shape(H, dim=(n, n), varname="H")
         self.M = self.__check_shape(M, dim=(m, m), varname="M")
 
-        rank = np.linalg.matrix_rank(np.block([A, -M]), tol=self.tol)
+        if (M == 0): #controllo se la matrice M è 0. Se si dobbiamo usare le variabili slack
+            self.s = self.b
+            self.b = np.zeros((m,)) #b in questo caso sarà 0, mentre s sono le variabili slack che per forza devono avere il valore di b, dato che sono tutti vincoli di uguaglianza
+            rank = np.linalg.matrix_rang(np.block([A, np.eye(m)]), tol=self.tol)
+            #TODO implementare questo cambiamento ovunque tipo
+        else:
+            rank = np.linalg.matrix_rank(np.block([A, -M]), tol=self.tol)
         assert (rank == m), f"Not full row rank matrix, {rank} != {m}"
 
         self.q = self.__check_shape(q, dim=(n,), varname="q") if q is not None else np.zeros(n)

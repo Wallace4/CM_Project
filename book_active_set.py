@@ -17,6 +17,8 @@ class linear_problem:
         self.z = A * x - b
         self.z[B] = abs(self.z[B])
         self.z[N] = np.max(-self.z[N], 0, axis=0)
+        self.B = B
+        self.N = N
 
     def solve(self):
         # fai simplesso e scialla
