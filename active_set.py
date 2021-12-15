@@ -2,7 +2,7 @@
 # coding=utf-8
 
 import numpy as np
-from scipy.linalg import lu, solve, ldl
+from scipy.linalg import lu, solve, ldl, cholesky
 from scipy.sparse.linalg import splu, spsolve
 import math
 import logging
@@ -81,10 +81,10 @@ class quadratic_problem:
         self.H = self.__check_shape(H, dim=(n, n), varname="H")
         self.M = self.__check_shape(M, dim=(m, m), varname="M")
 
-        if (M == 0): #controllo se la matrice M è 0. Se si dobbiamo usare le variabili slack
-            self.s = self.b
-            self.b = np.zeros((m,)) #b in questo caso sarà 0, mentre s sono le variabili slack che per forza devono avere il valore di b, dato che sono tutti vincoli di uguaglianza
-            rank = np.linalg.matrix_rang(np.block([A, np.eye(m)]), tol=self.tol)
+        if (np.all((M == 0))): #controllo se la matrice M è 0. Se si dobbiamo usare le variabili slack
+            #self.s = self.b
+            #self.b = np.zeros((m,)) #b in questo caso sarà 0, mentre s sono le variabili slack che per forza devono avere il valore di b, dato che sono tutti vincoli di uguaglianza
+            rank = np.linalg.matrix_rank(np.block([A, np.eye(m)]), tol=self.tol)
             #TODO implementare questo cambiamento ovunque tipo
         else:
             rank = np.linalg.matrix_rank(np.block([A, -M]), tol=self.tol)
@@ -132,7 +132,7 @@ class quadratic_problem:
         self.N[:] = self.__check_shape(N, dim=(n,), varname="N")
         self.logger.info(f"Successfully set the initial active set:\nB:\n{self.B}\nN:\n{self.N}")
 
-    def set_initial_active_set_from_factorization (self):
+    def set_initial_active_set_from_factorization (self): #metodo che non funziona bene ancora
         K = np.block([
             [self.H,  self.A.T],
             [self.A, -self.M  ]
@@ -152,6 +152,44 @@ class quadratic_problem:
         assert all(np.logical_xor(B,N)), "Sets are not valid. |Union| should be n and |Intersection| should be 0"
         self.logger.info(f"Successfully set the initial active set:\nB:\n{self.B}\nN:\n{self.N}")
         print(P)
+
+    def set_initial_active_set_from_lu (self):
+        P, L, U = lu (self.A.T)
+        m, n = self.A.shape
+        l = min(m, n)
+        A_T_approx = L[:l][:,:l] @ U[:l][:,:l]
+        print(f"P:\n{P}\nL:\n{L}\nU:\n{U}\n") #se n > m tutto torna 
+        print(f"approx:\n{A_T_approx}\nA.T:\n{self.A.T}")
+
+        self.B.fill(False)
+        self.N.fill(True)
+
+        for row in A_T_approx:
+            for i, a_row in enumerate(self.A.T):
+                if (np.allclose(row, a_row, atol=self.tol)):
+                    self.B[i] = True
+
+        print(f"B:\n{self.B}\nN:\n{self.N}")
+
+        Z = np.block([
+            [-np.linalg.inv(self.A[:, self.B]) @ self.A[:, ~self.B]],
+            [np.eye(max(m,n) - l)]
+        ])
+
+        tmp_H = Z.T @ H @ Z
+
+        R = cholesky(tmp_H)
+
+        print(f"Z:\n{Z}\nZ.THZ:\n{tmp_H}\nR:\n{R}")
+
+        mask = np.full(max(n,m)-l, False)
+        for i in range(R.shape[0]):
+            if (R[i, i] is not 0):
+                mask[i] = True
+
+        self.B[~self.B] = mask
+        self.N = ~self.B
+        print(f"B:\n{self.B}\nN:\n{self.N}")
 
     def reset_deltas (self):
         """! Function that reset the deltas values to 0
@@ -212,25 +250,31 @@ class quadratic_problem:
         self.z[self.B] = -self.r[self.B]
 
 #        self.logger.info(f"x[N]:\n{self.x[self.N]}\nq[N]:\n{self.q[self.N]}")
-
         B_size = np.sum(self.B)
-        K_I = np.block([
-            [self.H[self.B, :][:, self.B], self.A[:, self.B].T ],
-            [self.A[:, self.B],           -self.M]
-        ])
-        tmp_b = np.concatenate(
-            (self.H[self.B, :][:, self.N] @ self.q[self.N] - self.c[self.B] - self.r[self.B],
-             self.A[:, self.N] @ self.q[self.N] + self.b),
-            axis = 0
-        )
+        
+        if (np.all((M == 0))):
+            K_I = self.A[:, self.B]
+            tmp_b = self.A[:, self.N] @ self.q[self.N] + self.b
+            sol = solve_plin(K_I, tmp_b).reshape((B_size,))
+            self.x[self.B] = sol
+        else:
+            K_I = np.block([
+                [self.H[self.B, :][:, self.B], self.A[:, self.B].T ],
+                [self.A[:, self.B],           -self.M]
+            ])
+            tmp_b = np.concatenate(
+                (self.H[self.B, :][:, self.N] @ self.q[self.N] - self.c[self.B] - self.r[self.B],
+                 self.A[:, self.N] @ self.q[self.N] + self.b),
+                axis = 0
+            )
 
-        sol = solve_plin(K_I, tmp_b).reshape((B_size + self.y.size,))
+            sol = solve_plin(K_I, tmp_b).reshape((B_size + self.y.size,))
 
 #        self.logger.info(f"K_i @ x = b:\n{K_I}\n{sol}\n{tmp_b}")
 #        cond = np.allclose (K_I @ sol, tmp_b, atol=self.tol)
 #        self.logger.info(f"cond:\n{K_I @ sol}\n{cond}")
         
-        self.x[self.B], self.y = sol[:B_size], -sol[B_size:]
+            self.x[self.B], self.y = sol[:B_size], -sol[B_size:]
 
         self.z[self.N] = (self.H[self.B, :][:, self.N].T @ self.x[self.B] -
                           self.H[self.N, :][:, self.N]   @ self.q[self.N] +
@@ -302,9 +346,11 @@ class quadratic_problem:
         self.logger.info(f"Started generic Solver")
         self.logger.info(f"Initializing the sets and the variables")
         if (B is not None and N is not None):
+            print("bruh")
             self.set_initial_active_set(B, N)
         else:
-            self.set_initial_active_set_from_factorization()
+            print("not bruh")
+            self.set_initial_active_set_from_lu()
         self.set_initial_solution_from_basis()
         old_q = self.q
         old_r = self.r
@@ -434,24 +480,27 @@ class quadratic_problem:
         self.logger.info(f"Hbb:\n{self.H[self.B, :][:, self.B]}")
         self.logger.info(f"Ab:\n{self.A[:, self.B]}")
         self.logger.info(f"M:\n{self.M}")
-        K_I = np.block ([
-            [self.H[self.B, :][:, self.B], self.A[:, self.B].T],
-            [self.A[:, self.B],           -self.M             ],
-        ])
-        self.logger.info(f"K_I:\n{K_I}")
+        if (np.all((M == 0))):
+            self.dx[self.B] = solve_plin(self.A[:, self.B], self.A[:, l])
+        else:
+            K_I = np.block ([
+                [self.H[self.B, :][:, self.B], self.A[:, self.B].T],
+                [self.A[:, self.B],           -self.M             ],
+            ])
+            self.logger.info(f"K_I:\n{K_I}")
 
-        self.logger.info(f"Hb:\n{self.H[self.B][:, l]}")
-        self.logger.info(f"Al:\n{self.A[:, l]}")
-        tmp_b = -np.concatenate(
-            (self.H[self.B][:, l], self.A[:, l]),
-            axis=0
-        )
-        self.logger.info(f"b:\n{tmp_b}")
+            self.logger.info(f"Hb:\n{self.H[self.B][:, l]}")
+            self.logger.info(f"Al:\n{self.A[:, l]}")
+            tmp_b = -np.concatenate(
+                (self.H[self.B][:, l], self.A[:, l]),
+                axis=0
+            )
+            self.logger.info(f"b:\n{tmp_b}")
         
-        tmp_sol = solve_plin(K_I, tmp_b).reshape((B_size + self.y.size,)) #da cambiare
-        self.logger.info(f"sol:\n{tmp_sol}")
+            tmp_sol = solve_plin(K_I, tmp_b).reshape((B_size + self.y.size,)) #da cambiare
+            self.logger.info(f"sol:\n{tmp_sol}")
         
-        self.dx[self.B], self.dy[:] = tmp_sol[:B_size], -tmp_sol[B_size:]
+            self.dx[self.B], self.dy[:] = tmp_sol[:B_size], -tmp_sol[B_size:]
         self.logger.info(f"delta x:\n{self.dx}")
         self.logger.info(f"delta y:\n{self.dy}")
 
@@ -525,23 +574,35 @@ class quadratic_problem:
         self.logger.info(f"Al:\n{self.A[:, l]}")
         self.logger.info(f"Ab:\n{self.A[:, self.B]}")
         self.logger.info(f"M:\n{self.M}")
-        K_I = np.block([
-            [self.H[l, l],         self.H[self.B, l].T,       self.A[:, l].T     ],
-            [self.H[self.B][:, l], self.H[self.B][:, self.B], self.A[:, self.B].T],
-            [self.A[:, l],         self.A[:, self.B],         -self.M]
-        ])
-        self.logger.info(f"K_I:\n{K_I}")
+        if (np.all((M == 0))):
+            K_I = np.block([
+                [self.H[l, l], self.H[self.B, l].T],
+                [self.H[self.B][:, l], self.H[self.B][:, self.B]]
+            ])
+            tmp_b = np.concatenate((
+                np.ones(1),
+                np.zeros(B_size)
+            ))
+            tmp_sol = solve_plin(K_I, tmp_b.reshape(1+B))
+            self.dx[l], self.dx[self.B] = tmp__sol[0], tmp_sol[1: B_size+1]
+        else:
+            K_I = np.block([
+                [self.H[l, l],         self.H[self.B, l].T,       self.A[:, l].T     ],
+                [self.H[self.B][:, l], self.H[self.B][:, self.B], self.A[:, self.B].T],
+                [self.A[:, l],         self.A[:, self.B],         -self.M]
+            ])
+            self.logger.info(f"K_I:\n{K_I}")
         
-        tmp_b = np.concatenate((
-            np.ones(1),
-            np.zeros(B_size + self.y.size))
-        )
-        self.logger.info(f"b:\n{tmp_b}")
+            tmp_b = np.concatenate((
+                np.ones(1),
+                np.zeros(B_size + self.y.size))
+            )
+            self.logger.info(f"b:\n{tmp_b}")
         
-        tmp_sol = solve_plin(K_I, tmp_b).reshape((1+B_size+self.y.size,))
-        self.logger.info(f"sol:\n{tmp_sol}")
-        # robo da risolvere
-        self.dx[l], self.dx[self.B], self.dy[:] = tmp_sol[0], tmp_sol[1: B_size +1], -tmp_sol[B_size + 1:]
+            tmp_sol = solve_plin(K_I, tmp_b).reshape((1+B_size+self.y.size,))
+            self.logger.info(f"sol:\n{tmp_sol}")
+            # robo da risolvere
+            self.dx[l], self.dx[self.B], self.dy[:] = tmp_sol[0], tmp_sol[1: B_size +1], -tmp_sol[B_size + 1:]
         self.logger.info(f"delta x:\n{self.dx}")
         self.logger.info(f"delta y:\n{self.dy}")
 
@@ -642,23 +703,35 @@ class quadratic_problem:
         self.logger.info(f"Al:\n{self.A[:, l]}")
         self.logger.info(f"Ab:\n{self.A[:, self.B]}")
         self.logger.info(f"M:\n{self.M}")
-        K_I = np.block([
-            [self.H[l, l],         self.H[self.B, l].T,       self.A[:, l].T     ],
-            [self.H[self.B][:, l], self.H[self.B][:, self.B], self.A[:, self.B].T],
-            [self.A[:, l],         self.A[:, self.B],         -self.M]
-        ])
-        self.logger.info(f"K_I:\n{K_I}")
+        if (np.all((M == 0))):
+            K_I = np.block([
+                [self.H[l, l], self.H[self.B, l].T],
+                [self.H[self.B][:, l], self.H[self.B][:, self.B]]
+            ])
+            tmp_b = np.concatenate((
+                np.ones(1),
+                np.zeros(B_size)
+            ))
+            tmp_sol = solve_plin(K_I, tmp_b).reshape((1+B_size,))
+            self.dx[l], self.dx[self.B] = tmp_sol[0], tmp_sol[1: B_size +1]
+        else:
+            K_I = np.block([
+                [self.H[l, l],         self.H[self.B, l].T,       self.A[:, l].T     ],
+                [self.H[self.B][:, l], self.H[self.B][:, self.B], self.A[:, self.B].T],
+                [self.A[:, l],         self.A[:, self.B],         -self.M]
+            ])
+            self.logger.info(f"K_I:\n{K_I}")
+            
+            tmp_b = np.concatenate((
+                np.ones(1),
+                np.zeros(B_size + self.y.size))
+            )
+            self.logger.info(f"b:\n{tmp_b}")
         
-        tmp_b = np.concatenate((
-            np.ones(1),
-            np.zeros(B_size + self.y.size))
-        )
-        self.logger.info(f"b:\n{tmp_b}")
-        
-        tmp_sol = solve_plin(K_I, tmp_b).reshape((1+B_size+self.y.size,))
-        self.logger.info(f"sol:\n{tmp_sol}")
-        # robo da risolvere
-        self.dx[l], self.dx[self.B], self.dy[:] = tmp_sol[0], tmp_sol[1: B_size +1], -tmp_sol[B_size + 1:]
+            tmp_sol = solve_plin(K_I, tmp_b).reshape((1+B_size+self.y.size,))
+            self.logger.info(f"sol:\n{tmp_sol}")
+            # robo da risolvere
+            self.dx[l], self.dx[self.B], self.dy[:] = tmp_sol[0], tmp_sol[1: B_size +1], -tmp_sol[B_size + 1:]
         self.logger.info(f"delta x:\n{self.dx}")
         self.logger.info(f"delta y:\n{self.dy}")
 
@@ -723,24 +796,27 @@ class quadratic_problem:
         self.logger.info(f"Hbb:\n{self.H[self.B, :][:, self.B]}")
         self.logger.info(f"Ab:\n{self.A[:, self.B]}")
         self.logger.info(f"M:\n{self.M}")
-        K_I = np.block ([
-            [self.H[self.B, :][:, self.B], self.A[:, self.B].T],
-            [self.A[:, self.B],           -self.M             ],
-        ])
-        self.logger.info(f"K_I:\n{K_I}")
+        if (np.all((M == 0))):
+            self.dx[self.B] = solve_plin(self.A[:, self.B], self.A[:, l])
+        else:
+            K_I = np.block ([
+                [self.H[self.B, :][:, self.B], self.A[:, self.B].T],
+                [self.A[:, self.B],           -self.M             ],
+            ])
+            self.logger.info(f"K_I:\n{K_I}")
 
-        self.logger.info(f"Hb:\n{self.H[self.B][:, l]}")
-        self.logger.info(f"Al:\n{self.A[:, l]}")
-        tmp_b = -np.concatenate(
-            (self.H[self.B][:, l], self.A[:, l]),
-            axis=0
-        )
-        self.logger.info(f"b:\n{tmp_b}")
+            self.logger.info(f"Hb:\n{self.H[self.B][:, l]}")
+            self.logger.info(f"Al:\n{self.A[:, l]}")
+            tmp_b = -np.concatenate(
+                (self.H[self.B][:, l], self.A[:, l]),
+                axis=0
+            )
+            self.logger.info(f"b:\n{tmp_b}")
         
-        tmp_sol = solve_plin(K_I, tmp_b).reshape((B_size + self.y.size,)) #da cambiare
-        self.logger.info(f"sol:\n{tmp_sol}")
+            tmp_sol = solve_plin(K_I, tmp_b).reshape((B_size + self.y.size,)) #da cambiare
+            self.logger.info(f"sol:\n{tmp_sol}")
         
-        self.dx[self.B], self.dy[:] = tmp_sol[:B_size], -tmp_sol[B_size:]
+            self.dx[self.B], self.dy[:] = tmp_sol[:B_size], -tmp_sol[B_size:]
         self.logger.info(f"delta x:\n{self.dx}")
         self.logger.info(f"delta y:\n{self.dy}")
 
@@ -798,13 +874,13 @@ class quadratic_problem:
         return
 
 if __name__ == "__main__":
-    n, m = 10, 20
+    n, m = 10, 5
     np.random.seed(2033)
 
     A = 2*(np.random.rand(m, n)-np.random.rand(m, n))
-    M = 100*np.eye(m) + np.random.rand(m, m)
-    M = M @ M.T
-#    M = np.zeros((m, m))
+#    M = 100*np.eye(m) + np.random.rand(m, m)
+#    M = M @ M.T
+    M = np.zeros((m, m))
     H = 100*np.eye(n) + np.random.rand(n, n)
     H = H @ H.T
     
@@ -814,6 +890,6 @@ if __name__ == "__main__":
 
     B = (np.random.rand(n) - np.random.rand(n)) > 0
     N = ~B
-    
+#    qp.set_initial_active_set_from_lu()
     print(qp.solve(B, N))
     pass
