@@ -36,4 +36,4 @@ B = np.array([True, False, True, False, True, False, True])
 N = ~B
 
 #qp.set_initial_active_set_from_factorization()
-qp.solve(B, N)
+qp.solve()
