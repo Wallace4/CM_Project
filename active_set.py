@@ -7,6 +7,7 @@ from scipy.sparse.linalg import splu, spsolve
 import math
 import logging
 import sys
+import argparse
 
 def solve_plin (A, b):
 #    A_i = np.linalg.pinv (A)
@@ -14,7 +15,8 @@ def solve_plin (A, b):
 #    c = np.linalg.pinv(L) @ b
 #    x = np.linalg.pinv(U) @ c
 #    print(f"{x}\n{np.linalg.inv(P)@x}")
-    return np.linalg.lstsq(A, b, rcond=None)[0] #temporaneo, in realtà vorrei usare lu mala matrice ritorna singolare :/
+    return spsolve(A, b)
+#    return np.linalg.lstsq(A, b, rcond=None)[0] #temporaneo, in realtà vorrei usare lu mala matrice ritorna singolare :/
 
 def norm_2 (exp):
     norm = np.linalg.norm(exp, 2)
@@ -45,7 +47,7 @@ class quadratic_problem:
         else:
             raise TypeError(f'<{varname}> is not {type({np.ndarray})}')
 
-    def __init__(self, A, b, c, H, M, q=None, r=None, tol=1e-16, verbose=False):
+    def __init__(self, A, b, c, H, M, q=None, r=None, tol=1e-8, verbose=False):
         """! The Quadratic Problem Class initializer
 
         @param A matrix R(m,n)
@@ -209,7 +211,7 @@ class quadratic_problem:
         """
         constraint_AMb = self.A @ self.x + self.M @ self.y - self.b
         assert np.allclose(norm_2(constraint_AMb), 0, atol=self.tol), constraint_AMb
-        constraint_x = (self.x >= 0)
+        constraint_x = (self.x >= 0.-self.tol)
         assert np.allclose(constraint_x, True, atol=self.tol), constraint_x
         sol = self.c @ self.x + 0.5* self.x.T @ self.H @ self.x + 0.5 * self.y.T @ self.M @ self.y
         self.logger.info(f"The solution of the system is: {sol}")
@@ -221,7 +223,6 @@ class quadratic_problem:
         @return True if every condition is satisfied
         """
         condition_1 = self.A @ self.x + self.M @ self.y - self.b
-        print(f"{self.A @ self.x}\n{self.b}")
         self.logger.info(f"Ax + My - b: {condition_1}")
         assert np.allclose(norm_2(condition_1), 0, atol=self.tol), condition_1
         condition_2 = (self.H[self.B, :][:, self.B] @ self.x[self.B] +
@@ -237,11 +238,12 @@ class quadratic_problem:
         assert np.allclose(norm_2(condition_3), 0, atol=self.tol), condition_3
         condition_4 = self.z[self.B] + self.r[self.B]
         self.logger.info(f"z[b] + r[b]: {condition_4}") 
-        assert np.allclose(norm_2(condition_4), 0, atol=self.tol), condition_4
+#        assert np.allclose(norm_2(condition_4), 0, atol=self.tol), condition_4 #normal condition
+        assert np.all(condition_4 <= 0.+self.tol), condition_4 #relaxed condition
         condition_5 = self.x[self.N] + self.q[self.N]
         self.logger.info(f"x[n] + q[n]: {condition_5}") 
         assert np.allclose(norm_2(condition_5), 0, atol=self.tol), condition_5
-        condition_6 = (self.x[self.B] + self.q[self.B] >= 0)
+        condition_6 = (self.x[self.B] + self.q[self.B] >= 0.-self.tol)
         self.logger.info(f"x[b] + q[b] >= 0: {condition_6}") 
         assert np.allclose(condition_6, True, atol=self.tol), condition_6
         return True
@@ -301,12 +303,13 @@ class quadratic_problem:
         self.logger.info(f"Ax + My - b: {condition_2}") 
         assert np.allclose(norm_2(condition_2), 0, atol=self.tol), condition_2
         condition_3 = self.x[self.N] + self.q[self.N]
-        self.logger.info(f"x[n] + q[n]: {condition_3}") 
-        assert np.allclose(norm_2(condition_3), 0, atol=self.tol), condition_3
+        self.logger.info(f"x[n] + q[n]: {condition_3}")
+#        assert np.allclose(norm_2(condition_3), 0, atol=self.tol), condition_3 #normal condition
+        assert np.all(condition_3 <= 0.+self.tol), condition_3 #relaxed condition
         condition_4 = self.z[self.B] + self.r[self.B]
         self.logger.info(f"z[b] + r[b]: {condition_4}") 
         assert np.allclose(norm_2(condition_4), 0, atol=self.tol), condition_4
-        condition_5 = (self.z[self.N] + self.r[self.N] >= 0)
+        condition_5 = (self.z[self.N] + self.r[self.N] >= 0.-self.tol)
         self.logger.info(f"z[n] + r[n] >= 0: {condition_5}") 
         assert np.allclose(condition_5, True, atol=self.tol), condition_5
         return True
@@ -345,10 +348,8 @@ class quadratic_problem:
         self.logger.info(f"Started generic Solver")
         self.logger.info(f"Initializing the sets and the variables")
         if (B is not None and N is not None):
-            print("bruh")
             self.set_initial_active_set(B, N)
         else:
-            print("not bruh")
             self.set_initial_active_set_from_lu()
         self.set_initial_solution_from_basis()
         old_q = self.q
@@ -391,7 +392,7 @@ class quadratic_problem:
         self.test_primal_feasible()
         self.primal_active_set()
 
-        self.logger.info(f"Resetting the q vector and starting the dual problem")
+        self.logger.info(f"Resetting the q vector and starting the dual problem - hiyo")
         self.q.fill(0)
         self.test_dual_feasible()
         self.dual_active_set()
@@ -440,7 +441,7 @@ class quadratic_problem:
         
         # --------------- Inizio loop principale
         while True:
-            l_list = np.argwhere((self.z - self.r) < 0)
+            l_list = np.argwhere((self.z + self.r) < 0.-self.tol)
             self.logger.info(f"The indexes that violate the constrains are: {l_list.flatten()}")
             if l_list.size == 0:
                 self.logger.info(f"The primal algorith just terminated its course. The solutions are as follows:")
@@ -453,13 +454,16 @@ class quadratic_problem:
                     self.z,
                 )  # non si può fare un passo, aka siamo arrivati alla nostra soluzione ottima
             l = l_list[0]
+            
+            if (self.N[l] == True):
+                self.N[l] = False  # prendo il primo elemento di l e lo levo da N.
+                self.primal_base(l)
+                self.reset_deltas()
+            else:
+                self.B[l] = False
 
-            self.N[l] = False  # prendo il primo elemento di l e lo levo da N.
-            self.primal_base(l)
-            self.reset_deltas()
-
-            while (self.z[l] + self.r[l]) < 0:
-                input("premi per continuare...")
+            while (self.z[l] + self.r[l]) < 0.-self.tol:
+#                input("premi per continuare...")
                 self.primal_intermediate(l)
                 self.reset_deltas()
             self.B[l] = True
@@ -512,15 +516,15 @@ class quadratic_problem:
         )
         self.logger.info(f"delta z:\n{self.dz}")
 
-        alpha_opt = math.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(self.z[l] + self.r[l]) / self.dz[l]
+        alpha_opt = math.inf if np.allclose(self.dz[l], 0, atol=self.tol) else -(self.z[l] + self.r[l]) / self.dz[l]
 
         min_mask = ( self.dx < 0 )
         to_min = self.x + self.q
         to_min[~min_mask] = np.inf
         to_min[min_mask] = to_min[min_mask]/-self.dx[min_mask]
         print(f"min_mask: {min_mask}")
-        print(f"x: {self.x[min_mask]} q: {self.q[min_mask]}")
-        self.logger.info(f"to_min:\n{to_min}")
+        print(f"x:\n{self.x[min_mask]}\nq:\n{self.q[min_mask]}")
+        self.logger.info(f"to_min:\n{to_min[self.B]}\n")
         k = np.argmin(to_min)
         alpha_max = to_min[k]
 
@@ -531,9 +535,9 @@ class quadratic_problem:
             self.logger.exception(f"Primal is Unbounded (Dual is unfeasible")
             raise Exception("Primal is Unboundend (Dual is unfeasible)")  # il problema è impraticabile
 
-        if np.isclose(alpha, 0, atol=self.tol):
-            self.logger.exception(f"Step size is zero")
-            raise Exception("Step size is zero")
+#        if np.isclose(alpha, 0, atol=self.tol):
+#            self.logger.exception(f"Step size is zero")
+#            raise Exception("Step size is zero")
 
         self.x[l] += alpha * self.dx[l]
         self.x[self.B] += alpha * self.dx[self.B]
@@ -603,8 +607,8 @@ class quadratic_problem:
         to_min[~min_mask] = np.inf
         to_min[min_mask] = to_min[min_mask]/-self.dx[min_mask]
         print(f"min_mask: {min_mask}")
-        print(f"x: {self.x[min_mask]} q: {self.q[min_mask]}")
-        self.logger.info(f"to_min:\n{to_min}")
+        print(f"x:\n{self.x[min_mask]}\nq:\n{self.q[min_mask]}")
+        self.logger.info(f"to_min:\n{to_min[self.B]}")
         k = np.argmin(to_min)
         alpha_max = to_min[k]
 
@@ -621,7 +625,7 @@ class quadratic_problem:
         self.z[l] += alpha * self.dz[l]
         self.z[self.N] += alpha * self.dz[self.N]
         
-        if self.z[l] + self.r[l] < 0:
+        if self.z[l] + self.r[l] < 0.-self.tol:
             self.logger.info(f"k: {k}")
             self.B[k] = False
             self.N[k] = True
@@ -645,7 +649,7 @@ class quadratic_problem:
         
         # --------------- Inizio loop principale
         while True:
-            l_list = np.argwhere((self.x - self.q) < 0)
+            l_list = np.argwhere((self.x + self.q) < 0.-self.tol)
             self.logger.info(f"The indexes that violate the constrains are: {l_list.flatten()}")
             if l_list.size == 0:
                 self.logger.info(f"The dual algorith just terminated its course. The solutions are as follows:")
@@ -659,12 +663,15 @@ class quadratic_problem:
                 )  # non si può fare un passo, aka siamo arrivati alla nostra soluzione ottima
             l = l_list[0]
             
-            self.B[l] = False  # prendo il primo elemento di l e lo levo da N.
-            self.dual_base(l)
-            self.reset_deltas()
+            if (self.B[l] == True):
+                self.B[l] = False  # prendo il primo elemento di l e lo levo da N.
+                self.dual_base(l)
+                self.reset_deltas()
+            else:
+                self.N[l] = False
             
-            while (self.x[l] + self.q[l]) < 0:
-                input("premi per continuare...")
+            while (self.x[l] + self.q[l]) < 0.-self.tol:
+#                input("premi per continuare...")
                 self.dual_intermediate(l)
                 self.reset_deltas()
             self.N[l] = True
@@ -731,9 +738,9 @@ class quadratic_problem:
             self.logger.exception(f"Dual is Unbounded (Primal is unfeasible)")
             raise Exception("Dual is Unboundend (Primal is unfeasible)")
         
-        if np.isclose(alpha, 0, atol=self.tol):
-            self.logger.exception(f"Step size is zero")
-            raise Exception("Step size is zero")
+#        if np.isclose(alpha, 0, atol=self.tol):
+#            self.logger.exception(f"Step size is zero")
+#            raise Exception("Step size is zero")
         
         self.x[l] += alpha * self.dx[l]
         self.x[self.B] += alpha * self.dx[self.B]
@@ -843,8 +850,14 @@ class quadratic_problem:
         return
 
 if __name__ == "__main__":
-    n, m = 10, 5
-    np.random.seed(2033)
+    parser = argparse.ArgumentParser(description='Testing of the active set method')
+    parser.add_argument('--seed',
+                        help='random seed of the operation')
+    parser.set_defaults(seed=2021)
+    args = parser.parse_args()
+    
+    n, m = 100, 50
+    np.random.seed(int(args.seed))
 
     A = 2*(np.random.rand(m, n)-np.random.rand(m, n))
 #    M = 100*np.eye(m) + np.random.rand(m, m)
