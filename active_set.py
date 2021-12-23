@@ -217,7 +217,7 @@ class quadratic_problem:
         self.logger.info(f"The solution of the system is: {sol}")
         return sol
 
-    def test_primal_feasible(self):
+    def test_primal_feasible(self, relaxed = False):
         """! Function that check if the current solution satisfy the condition to be a feasible solution for the Primal problem
 
         @return True if every condition is satisfied
@@ -237,9 +237,11 @@ class quadratic_problem:
         self.logger.info(f"H[bn].Tx + H[nn]x + c[n] + A[n].Ty - z[n]: {condition_3}") 
         assert np.allclose(norm_2(condition_3), 0, atol=self.tol), condition_3
         condition_4 = self.z[self.B] + self.r[self.B]
-        self.logger.info(f"z[b] + r[b]: {condition_4}") 
-#        assert np.allclose(norm_2(condition_4), 0, atol=self.tol), condition_4 #normal condition
-        assert np.all(condition_4 <= 0.+self.tol), condition_4 #relaxed condition
+        self.logger.info(f"z[b] + r[b]: {condition_4}")
+        if (not relaxed):
+            assert np.allclose(condition_4, 0, atol=self.tol), condition_4 #normal condition
+        else:
+            assert np.all(condition_4 <= 0.+self.tol), condition_4 #relaxed condition
         condition_5 = self.x[self.N] + self.q[self.N]
         self.logger.info(f"x[n] + q[n]: {condition_5}") 
         assert np.allclose(norm_2(condition_5), 0, atol=self.tol), condition_5
@@ -291,7 +293,7 @@ class quadratic_problem:
         self.logger.info(f"the new constrains vectors are:\nq:\n{self.q}\nr:\n{self.r}")
         
     
-    def test_dual_feasible(self):
+    def test_dual_feasible(self, relaxed=False):
         """! Function that check if the current solution satisfy the condition to be a feasible solution for the Dual problem
         
         @return True if every condition is satisfied
@@ -304,8 +306,10 @@ class quadratic_problem:
         assert np.allclose(norm_2(condition_2), 0, atol=self.tol), condition_2
         condition_3 = self.x[self.N] + self.q[self.N]
         self.logger.info(f"x[n] + q[n]: {condition_3}")
-#        assert np.allclose(norm_2(condition_3), 0, atol=self.tol), condition_3 #normal condition
-        assert np.all(condition_3 <= 0.+self.tol), condition_3 #relaxed condition
+        if (not relaxed):
+            assert np.allclose(condition_3, 0, atol=self.tol), condition_3 #normal condition
+        else:
+            assert np.all(condition_3 <= 0.+self.tol), condition_3 #relaxed condition
         condition_4 = self.z[self.B] + self.r[self.B]
         self.logger.info(f"z[b] + r[b]: {condition_4}") 
         assert np.allclose(norm_2(condition_4), 0, atol=self.tol), condition_4
@@ -394,7 +398,7 @@ class quadratic_problem:
 
         self.logger.info(f"Resetting the q vector and starting the dual problem - hiyo")
         self.q.fill(0)
-        self.test_dual_feasible()
+        self.test_dual_feasible(relaxed=True)
         self.dual_active_set()
 
         self.logger.info(f"The Primal Shift Strategy ended with success")
@@ -423,7 +427,7 @@ class quadratic_problem:
 
         self.logger.info(f"Resetting the r vector and starting the primal problem")
         self.r.fill(0)
-        self.test_primal_feasible()
+        self.test_primal_feasible(relaxed=True)
         self.primal_active_set()
 
         self.logger.info(f"The Dual Shift Strategy ended with success")
@@ -545,7 +549,7 @@ class quadratic_problem:
         self.z[l] += alpha * self.dz[l]
         self.z[self.N] += alpha * self.dz[self.N]
         
-        if self.z[l] + self.r[l] < 0: #effettivamente anche alpha == alpha_max ha senso
+        if self.z[l] + self.r[l] < 0.-self.tol: #effettivamente anche alpha == alpha_max ha senso
             self.logger.info(f"k: {k}")
             self.B[k] = False
             self.N[k] = True
@@ -748,7 +752,7 @@ class quadratic_problem:
         self.z[l] += alpha * self.dz[l]
         self.z[self.N] += alpha * self.dz[self.N]
         
-        if self.x[l] + self.q[l] < 0:
+        if self.x[l] + self.q[l] < 0.-self.tol:
             self.logger.info(f"k: {k}")
             self.B[k] = True
             self.N[k] = False
@@ -837,7 +841,7 @@ class quadratic_problem:
         self.z[l] += alpha * self.dz[l]
         self.z[self.N] += alpha * self.dz[self.N]
         
-        if self.x[l] + self.q[l] < 0: #effettivamente anche alpha == alpha_max ha senso
+        if self.x[l] + self.q[l] < 0.-self.tol: #effettivamente anche alpha == alpha_max ha senso
             self.logger.info(f"k: {k}")
             self.B[k] = True
             self.N[k] = False
