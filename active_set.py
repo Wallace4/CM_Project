@@ -93,17 +93,25 @@ class quadratic_problem:
 
         if (l != -np.inf):
             self.l = self.__check_shape(l, dim=(n,), varname="l")
-            self.q = np.zeros(n) #q e r sono soltando gli shift, quindi interni alla costruzione del problema
-            self.r = np.zeros(n)
+            self.q_l = np.zeros(n) #q e r sono soltando gli shift, quindi interni alla costruzione del problema
+            self.r_l = np.zeros(n)
+            self.z_l = np.zeros(n)
+            self.dz_l = np.zeros(n)
+        else:
+            self.l = l
         if (u != np.inf):
             self.u = self.__check_shape(u, dim=(n,), varname="u")
             self.q_u = np.zeros(n)
-            self.r_u = np.zeros(n) #questo ci serve per 
+            self.r_u = np.zeros(n) #questo ci serve per
+            self.z_u = np.zeros(n)
+            self.dz_u = np.zeros(n)
+        else:
+            self.u = u
 
         # init solutions
         self.x = np.zeros(n)
         self.y = np.zeros(m) 
-        self.z = np.zeros(n)
+        self.z = np.zeros(n) #tmp bad
         
         # init deltas
         self.dx = np.zeros(n)
@@ -114,6 +122,7 @@ class quadratic_problem:
         self.B = np.full(n, True)
         self.N = np.full(n, False)
 
+    @deprecated
     def set_initial_solution(self, x, y, z):
         """! Function that set the initial solution of the problem
         
@@ -126,7 +135,8 @@ class quadratic_problem:
         self.y[:] = self.__check_shape(y, dim=(m,), varname="y")
         self.z[:] = self.__check_shape(z, dim=(n,), varname="z")
         self.logger.info(f"Successfully set the initial solutions:\nx:\n{self.x}\ny:\n{self.y}\nz:\n{self.z}")
-        
+
+    @deprecated
     def set_initial_active_set(self, B, N):
         """! Function that set the initial active set of the problem
         
@@ -139,6 +149,7 @@ class quadratic_problem:
         self.N[:] = self.__check_shape(N, dim=(n,), varname="N")
         self.logger.info(f"Successfully set the initial active set:\nB:\n{self.B}\nN:\n{self.N}")
 
+    #stuff che non funziona :/
     def set_initial_active_set_from_factorization (self): #metodo che non funziona bene ancora
         K = np.block([
             [self.H,  self.A.T],
@@ -160,6 +171,7 @@ class quadratic_problem:
         self.logger.info(f"Successfully set the initial active set:\nB:\n{self.B}\nN:\n{self.N}")
         print(P)
 
+    #attualmente utilizzata
     def set_initial_active_set_from_lu (self):
         P, L, U = lu (self.A.T)
         m, n = self.A.shape
@@ -209,6 +221,10 @@ class quadratic_problem:
         self.dx.fill(0)
         self.dy.fill(0)
         self.dz.fill(0)
+        if (self.l != -np.inf):
+            self.dz_l.fill(0)
+        if (self.u != np.inf):
+            self.dx_u.fill(0)
 
     def get_solution(self):
         """! Function that return the solution of the Quadratic Problem
@@ -217,7 +233,7 @@ class quadratic_problem:
         """
         constraint_AMb = self.A @ self.x + self.M @ self.y - self.b
         assert np.allclose(norm_2(constraint_AMb), 0, atol=self.tol), constraint_AMb
-        constraint_x = (self.x >= 0.-self.tol)
+        constraint_x = (self.x >= self.l-self.tol) and (self.x <= self.u+self.tol)
         assert np.allclose(constraint_x, True, atol=self.tol), constraint_x
         sol = self.c @ self.x + 0.5* self.x.T @ self.H @ self.x + 0.5 * self.y.T @ self.M @ self.y
         self.logger.info(f"The solution of the system is: {sol}")
@@ -242,17 +258,38 @@ class quadratic_problem:
                        self.A[:, self.N].T            @ self.y         - self.z[self.N])
         self.logger.info(f"H[bn].Tx + H[nn]x + c[n] + A[n].Ty - z[n]: {condition_3}") 
         assert np.allclose(norm_2(condition_3), 0, atol=self.tol), condition_3
-        condition_4 = self.z[self.B] + self.r[self.B]
-        self.logger.info(f"z[b] + r[b]: {condition_4}")
-        if (not relaxed):
-            assert np.allclose(condition_4, 0, atol=self.tol), condition_4 #normal condition
+        if (self.l != -np.inf):
+            condition_4_l = self.z_l[self.B] + self.r_l[self.B]
+            self.logger.info(f"z_l[b] + r_l[b]: {condition_4_l}")
+            if (not relaxed):
+                assert np.allclose(condition_4_l, 0, atol=self.tol), condition_4 #normal condition
+            else:
+                assert np.all(condition_4_l <= 0.+self.tol), condition_4 #relaxed condition
+            condition_5_l = np.allclose(self.x[self.N] + self.q_l[self.N], self.l, atol=self.tol)
+            self.logger.info(f"x[n] + q_u[n]: {condition_5_l}")
+            condition_6_l = (self.x[self.B] + self.q[self.B] >= self.l-self.tol)
         else:
-            assert np.all(condition_4 <= 0.+self.tol), condition_4 #relaxed condition
-        condition_5 = self.x[self.N] + self.q[self.N]
-        self.logger.info(f"x[n] + q[n]: {condition_5}") 
-        assert np.allclose(norm_2(condition_5), 0, atol=self.tol), condition_5
-        condition_6 = (self.x[self.B] + self.q[self.B] >= 0.-self.tol)
-        self.logger.info(f"x[b] + q[b] >= 0: {condition_6}") 
+            condition_5_l = False
+            condition_6_l = True
+            
+        if (self.u != np.inf):
+            condition_4_u = self.z_u[self.B] + self.r_u[self.B]
+            self.logger.info(f"z_u[b] + r_u[b]: {condition_4_u}")
+            if (not relaxed):
+                assert np.allclose(condition_4_u, 0, atol=self.tol), condition_4 #normal condition
+            else:
+                assert np.all(condition_4_u <= 0.+self.tol), condition_4 #relaxed condition
+            condition_5_u = np.allclose (self.x[self.N] + self.q_u[self.N], self.u, atol=self.tol)
+            self.logger.info(f"x[n] + q_u[n]: {condition_5_u}")
+            condition_6_u = (self.x[self.B] + self.q_u[self.B] <= self.u+self.tol)
+        else:
+            condition_5_u = False
+            condition_6_u = True
+            
+        condition_5 = condition_5_l or  condition_5_u
+        condition_6 = condition_6_l and condition_6_u
+        assert np.allclose(condition_5, True, atol=self.tol), condition_5
+        self.logger.info(f"l <= x[b] + q[b] <= u: {condition_6}") 
         assert np.allclose(condition_6, True, atol=self.tol), condition_6
         return True
 
