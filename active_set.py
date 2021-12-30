@@ -47,7 +47,7 @@ class quadratic_problem:
         else:
             raise TypeError(f'<{varname}> is not {type({np.ndarray})}')
 
-    def __init__(self, A, b, c, H, M, q=None, r=None, tol=1e-8, verbose=False):
+    def __init__(self, A, b, c, H, M, l=0, u=np.inf, tol=1e-8, verbose=False):
         """! The Quadratic Problem Class initializer
 
         @param A matrix R(m,n)
@@ -82,21 +82,27 @@ class quadratic_problem:
         self.H = self.__check_shape(H, dim=(n, n), varname="H")
         self.M = self.__check_shape(M, dim=(m, m), varname="M")
 
-        if (np.all((M == 0))): #controllo se la matrice M è 0. Se si dobbiamo usare le variabili slack
+#        if (np.all((M == 1))): #controllo se la matrice M è 0. Se si dobbiamo usare le variabili slack
             #self.s = self.b #dobbiamo in realtà usare y come se fosse s, in questo modo noi avremmo s come variabile, e dobbiamo solo farla rientrare entro i vincoli, visto che è l'unica variabile non vincolata.
             #self.b = np.zeros((m,)) #b in questo caso sarà 0, mentre s sono le variabili slack che per forza devono avere il valore di b, dato che sono tutti vincoli di uguaglianza
-            rank = np.linalg.matrix_rank(np.block([A, np.eye(m)]), tol=self.tol)
+#            rank = np.linalg.matrix_rank(np.block([A, np.eye(m)]), tol=self.tol)
             #TODO implementare questo cambiamento ovunque tipo
-        else:
-            rank = np.linalg.matrix_rank(np.block([A, -M]), tol=self.tol)
+        #else:
+        rank = np.linalg.matrix_rank(np.block([A, -M]), tol=self.tol)
         assert (rank == m), f"Not full row rank matrix, {rank} != {m}"
 
-        self.q = self.__check_shape(q, dim=(n,), varname="q") if q is not None else np.zeros(n)
-        self.r = self.__check_shape(r, dim=(n,), varname="r") if r is not None else np.zeros(n)
+        if (l != -np.inf):
+            self.l = self.__check_shape(l, dim=(n,), varname="l")
+            self.q = np.zeros(n) #q e r sono soltando gli shift, quindi interni alla costruzione del problema
+            self.r = np.zeros(n)
+        if (u != np.inf):
+            self.u = self.__check_shape(u, dim=(n,), varname="u")
+            self.q_u = np.zeros(n)
+            self.r_u = np.zeros(n) #questo ci serve per 
 
         # init solutions
         self.x = np.zeros(n)
-        self.y = np.zeros(m) #potremmo usare y come s
+        self.y = np.zeros(m) 
         self.z = np.zeros(n)
         
         # init deltas
