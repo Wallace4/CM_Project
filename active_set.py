@@ -457,7 +457,8 @@ class quadratic_problem:
                     self.y,
                     self.z,
                 )  # non si può fare un passo, aka siamo arrivati alla nostra soluzione ottima
-            l = l_list[0]
+            #l = l_list[0]
+            l = l_list[np.argmin(self.z[l_list] + self.r[l_list])]
             
             if (self.N[l] == True):
                 self.N[l] = False  # prendo il primo elemento di l e lo levo da N.
@@ -665,7 +666,8 @@ class quadratic_problem:
                     self.y,
                     self.z,
                 )  # non si può fare un passo, aka siamo arrivati alla nostra soluzione ottima
-            l = l_list[0]
+            #l = l_list[0]
+            l = l_list[np.argmin(self.x[l_list] + self.q[l_list])]
             
             if (self.B[l] == True):
                 self.B[l] = False  # prendo il primo elemento di l e lo levo da N.
