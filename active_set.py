@@ -91,22 +91,19 @@ class quadratic_problem:
         rank = np.linalg.matrix_rank(np.block([A, -M]), tol=self.tol)
         assert (rank == m), f"Not full row rank matrix, {rank} != {m}"
 
-        if (l != -np.inf):
-            self.l = self.__check_shape(l, dim=(n,), varname="l")
-            self.q_l = np.zeros(n) #q e r sono soltando gli shift, quindi interni alla costruzione del problema
-            self.r_l = np.zeros(n)
-            self.z_l = np.zeros(n)
-            self.dz_l = np.zeros(n)
-        else:
-            self.l = l
-        if (u != np.inf):
-            self.u = self.__check_shape(u, dim=(n,), varname="u")
-            self.q_u = np.zeros(n)
-            self.r_u = np.zeros(n) #questo ci serve per
-            self.z_u = np.zeros(n)
-            self.dz_u = np.zeros(n)
-        else:
-            self.u = u
+        #init lower bound shifts and z
+        self.l = self.__check_shape(l, dim=(n,), varname="l") if l is not -np.inf else -np.inf
+        self.q_l = np.zeros(n) #q e r sono soltando gli shift, quindi interni alla costruzione del problema
+        self.r_l = np.zeros(n)
+        self.z_l = np.zeros(n)
+        self.dz_l = np.zeros(n)
+
+        #init upper bound shift and z
+        self.u = self.__check_shape(u, dim=(n,), varname="u") if u is not np.inf else np.inf
+        self.q_u = np.zeros(n)
+        self.r_u = np.zeros(n) 
+        self.z_u = np.zeros(n)
+        self.dz_u = np.zeros(n)
 
         # init solutions
         self.x = np.zeros(n)
@@ -221,10 +218,8 @@ class quadratic_problem:
         self.dx.fill(0)
         self.dy.fill(0)
         self.dz.fill(0)
-        if (self.l != -np.inf):
-            self.dz_l.fill(0)
-        if (self.u != np.inf):
-            self.dx_u.fill(0)
+        self.dz_l.fill(0)
+        self.dz_u.fill(0)
 
     def get_solution(self):
         """! Function that return the solution of the Quadratic Problem
@@ -258,33 +253,28 @@ class quadratic_problem:
                        self.A[:, self.N].T            @ self.y         - self.z[self.N])
         self.logger.info(f"H[bn].Tx + H[nn]x + c[n] + A[n].Ty - z[n]: {condition_3}") 
         assert np.allclose(norm_2(condition_3), 0, atol=self.tol), condition_3
-        if (self.l != -np.inf):
-            condition_4_l = self.z_l[self.B] + self.r_l[self.B]
-            self.logger.info(f"z_l[b] + r_l[b]: {condition_4_l}")
-            if (not relaxed):
-                assert np.allclose(condition_4_l, 0, atol=self.tol), condition_4 #normal condition
-            else:
-                assert np.all(condition_4_l <= 0.+self.tol), condition_4 #relaxed condition
-            condition_5_l = np.allclose(self.x[self.N] + self.q_l[self.N], self.l, atol=self.tol)
-            self.logger.info(f"x[n] + q_u[n]: {condition_5_l}")
-            condition_6_l = (self.x[self.B] + self.q[self.B] >= self.l-self.tol)
+
+        #lower bound conditions, 
+        condition_4_l = self.z_l[self.B] + self.r_l[self.B]
+        self.logger.info(f"z_l[b] + r_l[b]: {condition_4_l}")
+        if (not relaxed):
+            assert np.allclose(condition_4_l, 0, atol=self.tol), condition_4 #normal condition
         else:
-            condition_5_l = False
-            condition_6_l = True
-            
-        if (self.u != np.inf):
-            condition_4_u = self.z_u[self.B] + self.r_u[self.B]
-            self.logger.info(f"z_u[b] + r_u[b]: {condition_4_u}")
-            if (not relaxed):
-                assert np.allclose(condition_4_u, 0, atol=self.tol), condition_4 #normal condition
-            else:
-                assert np.all(condition_4_u <= 0.+self.tol), condition_4 #relaxed condition
-            condition_5_u = np.allclose (self.x[self.N] + self.q_u[self.N], self.u, atol=self.tol)
-            self.logger.info(f"x[n] + q_u[n]: {condition_5_u}")
-            condition_6_u = (self.x[self.B] + self.q_u[self.B] <= self.u+self.tol)
+            assert np.all(condition_4_l <= 0.+self.tol), condition_4 #relaxed condition
+        condition_5_l = np.allclose(self.x[self.N] + self.q_l[self.N], self.l, atol=self.tol)
+        self.logger.info(f"x[n] + q_u[n]: {condition_5_l}")
+        condition_6_l = (self.x[self.B] + self.q[self.B] >= self.l-self.tol)
+
+        #upper bound conditions
+        condition_4_u = self.z_u[self.B] + self.r_u[self.B]
+        self.logger.info(f"z_u[b] + r_u[b]: {condition_4_u}")
+        if (not relaxed):
+            assert np.allclose(condition_4_u, 0., atol=self.tol), condition_4 #normal condition
         else:
-            condition_5_u = False
-            condition_6_u = True
+            assert np.all(condition_4_u <= 0.+self.tol), condition_4 #relaxed condition
+        condition_5_u = np.allclose (self.x[self.N] + self.q_u[self.N], self.u, atol=self.tol)
+        self.logger.info(f"x[n] + q_u[n]: {condition_5_u}")
+        condition_6_u = (self.x[self.B] + self.q_u[self.B] <= self.u+self.tol)
             
         condition_5 = condition_5_l or  condition_5_u
         condition_6 = condition_6_l and condition_6_u
@@ -347,18 +337,36 @@ class quadratic_problem:
         condition_2 = self.A @ self.x + self.M @ self.y - self.b
         self.logger.info(f"Ax + My - b: {condition_2}") 
         assert np.allclose(norm_2(condition_2), 0, atol=self.tol), condition_2
-        condition_3 = self.x[self.N] + self.q[self.N]
+        
+        condition_3_l = self.x[self.N] + self.q_l[self.N]
+        self.logger.info(f"x[n] + q[n]: {condition_3_l}")
+        if (not relaxed):
+            condition_3_l = np.allclose(condition_3_l, self.l, atol=self.tol) #normal condition
+        else:
+            condition_3_l = np.all(condition_3_l <= self.l+self.tol) #relaxed condition
+        condition_4_l = self.z_l[self.B] + self.r_l[self.B]
+        self.logger.info(f"z[b] + r[b]: {condition_4_l}") 
+        assert np.allclose(norm_2(condition_4_l), 0, atol=self.tol), condition_4_l
+        condition_5_l = (self.z_l[self.N] + self.r_l[self.N] >= 0.-self.tol)
+        self.logger.info(f"z[n] + r[n] >= 0: {condition_5_u}")
+        assert np.allclose(condition_5_l, True, atol=self.tol), condition_5_l
+            
+        condition_3_u = self.x[self.N] + self.q_u[self.N]
         self.logger.info(f"x[n] + q[n]: {condition_3}")
         if (not relaxed):
-            assert np.allclose(condition_3, 0, atol=self.tol), condition_3 #normal condition
+            condition_3_u = np.allclose(condition_3_u, self.u, atol=self.tol) #normal condition
         else:
-            assert np.all(condition_3 <= 0.+self.tol), condition_3 #relaxed condition
-        condition_4 = self.z[self.B] + self.r[self.B]
-        self.logger.info(f"z[b] + r[b]: {condition_4}") 
-        assert np.allclose(norm_2(condition_4), 0, atol=self.tol), condition_4
-        condition_5 = (self.z[self.N] + self.r[self.N] >= 0.-self.tol)
-        self.logger.info(f"z[n] + r[n] >= 0: {condition_5}") 
-        assert np.allclose(condition_5, True, atol=self.tol), condition_5
+            condition_3_u = np.all(condition_3_u <= self.u+self.tol) #relaxed condition
+        condition_4_u = self.z_u[self.B] + self.r_u[self.B]
+        self.logger.info(f"z[b] + r[b]: {condition_4_u}")
+        assert np.allclose(norm_2(condition_4_u), 0, atol=self.tol), condition_4_u
+        condition_5_u = (self.z_u[self.N] + self.r_u[self.N] >= 0.-self.tol)
+        self.logger.info(f"z[n] + r[n] >= 0: {condition_5_u}")
+        assert np.allclose(condition_5_u, True, atol=self.tol), condition_5_u
+
+        condition_3 = condition_3_l or condition_3_u
+        assert np.allclose(condtition_3, True, atol=self.tol), condition_3
+
         return True
 
     def general_active_set (self):
