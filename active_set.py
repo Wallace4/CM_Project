@@ -287,8 +287,11 @@ class quadratic_problem:
         """! Function that calculate the initial solution for the primal problem
         
         """
-        self.x[self.N] = -self.q[self.N]
+        self.x[self.N] = np.where(self.l[self.N] == -np.inf, self.u[self.N]+self.q_u[self.N], self.l[self.N]-self.q_l[self.N])
+        self.x[self.N] = np.where(self.x[self.N] == np.inf, 0, self.x[self.N]) #forse da fare i tmp bounds invece che 0
         self.z[self.B] = -self.r[self.B]
+        self.z_l[self.B] = -self.r_l[self.B]
+        self.z_u[self.B] = -self.r_u[self.B]
 
 #        self.logger.info(f"x[N]:\n{self.x[self.N]}\nq[N]:\n{self.q[self.N]}")
         B_size = np.sum(self.B)
@@ -299,8 +302,8 @@ class quadratic_problem:
         ])
         
         tmp_b = np.concatenate(
-            (self.H[self.B, :][:, self.N] @ self.q[self.N] - self.c[self.B] - self.r[self.B],
-             self.A[:, self.N] @ self.q[self.N] + self.b),
+            (self.H[self.B, :][:, self.N] @ self.x[self.N] - self.c[self.B] - self.z_l[self.B] - self.z_u[self.B],
+             self.A[:, self.N] @ self.x[self.N] + self.b),
             axis = 0
         )
         
@@ -312,10 +315,16 @@ class quadratic_problem:
         
         self.x[self.B], self.y = sol[:B_size], -sol[B_size:]
 
-        self.z[self.N] = (self.H[self.B, :][:, self.N].T @ self.x[self.B] -
+        self.z_l[self.N] = (self.H[self.B, :][:, self.N].T @ self.x[self.B] -
                           self.H[self.N, :][:, self.N]   @ self.q[self.N] +
                           self.c[self.N] -
-                          self.A[:, self.N].T @ self.y)
+                          self.A[:, self.N].T @ self.y +
+                          self.r_u[self.N]) #sta cosa ha poco senso perché r_l != z_l ecc, però ecco.
+        self.z_u[self.N] = (self.H[self.B, :][:, self.N].T @ self.x[self.B] -
+                          self.H[self.N, :][:, self.N]   @ self.q[self.N] +
+                          self.c[self.N] -
+                          self.A[:, self.N].T @ self.y +
+                          self.r_l[self.N])
 
         max_q = np.where(-self.x[self.B] > 0, -self.x[self.B], 0)
         max_r = np.where(-self.z[self.N] > 0, -self.z[self.N], 0)
@@ -339,29 +348,29 @@ class quadratic_problem:
         assert np.allclose(norm_2(condition_2), 0, atol=self.tol), condition_2
         
         condition_3_l = self.x[self.N] + self.q_l[self.N]
-        self.logger.info(f"x[n] + q[n]: {condition_3_l}")
+        self.logger.info(f"x[n] + q_l[n]: {condition_3_l}")
         if (not relaxed):
             condition_3_l = np.allclose(condition_3_l, self.l, atol=self.tol) #normal condition
         else:
             condition_3_l = np.all(condition_3_l <= self.l+self.tol) #relaxed condition
         condition_4_l = self.z_l[self.B] + self.r_l[self.B]
-        self.logger.info(f"z[b] + r[b]: {condition_4_l}") 
+        self.logger.info(f"z_l[b] + r_l[b]: {condition_4_l}") 
         assert np.allclose(norm_2(condition_4_l), 0, atol=self.tol), condition_4_l
         condition_5_l = (self.z_l[self.N] + self.r_l[self.N] >= 0.-self.tol)
-        self.logger.info(f"z[n] + r[n] >= 0: {condition_5_u}")
+        self.logger.info(f"z_l[n] + r_l[n] >= 0: {condition_5_u}")
         assert np.allclose(condition_5_l, True, atol=self.tol), condition_5_l
             
         condition_3_u = self.x[self.N] + self.q_u[self.N]
-        self.logger.info(f"x[n] + q[n]: {condition_3}")
+        self.logger.info(f"x[n] + q_u[n]: {condition_3}")
         if (not relaxed):
             condition_3_u = np.allclose(condition_3_u, self.u, atol=self.tol) #normal condition
         else:
             condition_3_u = np.all(condition_3_u <= self.u+self.tol) #relaxed condition
         condition_4_u = self.z_u[self.B] + self.r_u[self.B]
-        self.logger.info(f"z[b] + r[b]: {condition_4_u}")
+        self.logger.info(f"z_u[b] + r_u[b]: {condition_4_u}")
         assert np.allclose(norm_2(condition_4_u), 0, atol=self.tol), condition_4_u
         condition_5_u = (self.z_u[self.N] + self.r_u[self.N] >= 0.-self.tol)
-        self.logger.info(f"z[n] + r[n] >= 0: {condition_5_u}")
+        self.logger.info(f"z_u[n] + r_u[n] >= 0: {condition_5_u}")
         assert np.allclose(condition_5_u, True, atol=self.tol), condition_5_u
 
         condition_3 = condition_3_l or condition_3_u
