@@ -315,11 +315,10 @@ class quadratic_problem:
         
         self.x[self.B], self.y = sol[:B_size], -sol[B_size:]
 
-        self.z_l[self.N] = (self.H[self.B, :][:, self.N].T @ self.x[self.B] -
-                          self.H[self.N, :][:, self.N]   @ self.q[self.N] +
-                          self.c[self.N] -
-                          self.A[:, self.N].T @ self.y +
-                          self.r_u[self.N]) #sta cosa ha poco senso perché r_l != z_l ecc, però ecco.
+        tmp_z = (self.H[self.B, :][:, self.N].T @ self.x[self.B] -
+                 self.H[self.N, :][:, self.N]   @ self.x[self.N] +
+                 self.c[self.N] -
+                 self.A[:, self.N].T @ self.y)
         self.z_u[self.N] = (self.H[self.B, :][:, self.N].T @ self.x[self.B] -
                           self.H[self.N, :][:, self.N]   @ self.q[self.N] +
                           self.c[self.N] -
