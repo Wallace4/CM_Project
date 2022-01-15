@@ -505,7 +505,7 @@ class quadratic_problem:
         
         # --------------- Inizio loop principale
         while True:
-            l_list = np.argwhere((self.z + self.r) < 0.-self.tol)
+            l_list = np.argwhere((self.z_l + self.r_l) < 0.-self.tol) #addare un append per gli upper
             self.logger.info(f"The indexes that violate the constrains are: {l_list.flatten()}")
             if l_list.size == 0:
                 self.logger.info(f"The primal algorith just terminated its course. The solutions are as follows:")
@@ -533,10 +533,11 @@ class quadratic_problem:
                 self.reset_deltas()
             self.B[l] = True
 
-    def primal_base(self, l):
+    def primal_base(self, l, bound="lower"):
         """! Function that do the base iteration of the Primal problem
 
         @param l the index that violate the constrain
+        @param bound lower/upper, determine if we violated an upper or lower bound
         """
         self.logger.info("-"*20)
         self.logger.info(f"Base iteration of the Primal Problem, with the index: {l}")
@@ -569,26 +570,34 @@ class quadratic_problem:
         self.logger.info(f"delta x:\n{self.dx}")
         self.logger.info(f"delta y:\n{self.dy}")
 
-        self.dz[self.N] = (
+        tmp_dz = (
               self.H[self.N, l]           * self.dx[l] #qui * va bene perché delta_x_l è uno scalare
             + self.H[self.B][:, self.N].T @ self.dx[self.B] #qui usiamo matmul perché è la moltiplicazione di una matrice #Nx#B per un vettore #Bx1
             - self.A[:, self.N].T         @ self.dy #come sopra, #Nxm per mx1
         )
-        self.dz[l] = (
+        tmp_dz_l = (
               self.H[l, l]           * self.dx[l] #scalare
             + self.H[self.B][:, l].T @ self.dx[self.B] # qui è un vettore 1x#B per #B
             - self.A[:, l].T         @ self.dy # qui è 1xm per mx1
         )
-        self.logger.info(f"delta z:\n{self.dz}")
+        if (self.z_l[l] + self.r_l[l] < 0.-self.tol):
+            self.dz_l[self.N] = tmp_dz
+            self.dz_l[l] = tmp_dz_l
+            self.logger.info(f"delta z_l:\n{self.dz_l}")
 
-        alpha_opt = math.inf if np.allclose(self.dz[l], 0, atol=self.tol) else -(self.z[l] + self.r[l]) / self.dz[l]
+            alpha_opt = math.inf if np.allclose(self.dz_l[l], 0, atol=self.tol) else -(self.z_l[l] + self.r_l[l]) / self.dz_l[l]
+    
+        if (self.z_u[l] + self.r_u[l] < 0.-self.tol): #questi due if, in teoria, sono uno l'opposto dell'altro. o vale uno o vale l'altro.
+            self.dz_u[self.N] = tmp_dz
+            self.dz_u[l] = tmp_dz_l
+            self.logger.info(f"delta z_u:\n{self.dz_u}")
 
-        min_mask = ( self.dx < 0 )
-        to_min = self.x + self.q
+            alpha_opt = math.inf if np.allclose(self.dz_u[l], 0, atol=self.tol) else -(self.z_u[l] + self.r_u[l]) / self.dz_u[l]
+
+        min_mask = self.B
+        to_min = (self.x - self.l + self.q) if (self.dx < 0) else (self.x - self.u - self.q_u)
         to_min[~min_mask] = np.inf
         to_min[min_mask] = to_min[min_mask]/-self.dx[min_mask]
-        print(f"min_mask: {min_mask}")
-        print(f"x:\n{self.x[min_mask]}\nq:\n{self.q[min_mask]}")
         self.logger.info(f"to_min:\n{to_min[self.B]}\n")
         k = np.argmin(to_min)
         alpha_max = to_min[k]
@@ -600,24 +609,27 @@ class quadratic_problem:
             self.logger.exception(f"Primal is Unbounded (Dual is unfeasible")
             raise Exception("Primal is Unboundend (Dual is unfeasible)")  # il problema è impraticabile
 
-#        if np.isclose(alpha, 0, atol=self.tol):
-#            self.logger.exception(f"Step size is zero")
-#            raise Exception("Step size is zero")
-
-        self.x[l] += alpha * self.dx[l]
-        self.x[self.B] += alpha * self.dx[self.B]
-        self.y    += alpha * self.dy
-        self.z[l] += alpha * self.dz[l]
-        self.z[self.N] += alpha * self.dz[self.N]
+        #if np.isclose(alpha, 0, atol=self.tol):
+        #    self.logger.exception(f"Step size is zero")
+        #    raise Exception("Step size is zero")
+            
+        self.x[l]        += alpha * self.dx[l]
+        self.x[self.B]   += alpha * self.dx[self.B]
+        self.y           += alpha * self.dy
+        self.z_l[l]      += alpha * self.dz_l[l]
+        self.z_l[self.N] += alpha * self.dz_l[self.N]
+        self.z_u[l]      += alpha * self.dz_u[l]
+        self.z_u[self.N] += alpha * self.dz_u[self.N]
         
-        if self.z[l] + self.r[l] < 0.-self.tol: #effettivamente anche alpha == alpha_max ha senso
+        if self.z_l[l] + self.r_l[l] < 0.-self.tol or self.z_u[l] + self.r_u[l] < 0.-self.tol: #effettivamente anche alpha == alpha_max ha senso
             self.logger.info(f"k: {k}")
             self.B[k] = False
             self.N[k] = True
         
         self.logger.info(f"x:\n{self.x}")
         self.logger.info(f"y:\n{self.y}")
-        self.logger.info(f"z:\n{self.z}")
+        self.logger.info(f"z_l:\n{self.z_l}")
+        self.logger.info(f"z_u:\n{self.z_u}")
         self.logger.info(f"B:\n{self.B}")
         self.logger.info(f"N:\n{self.N}")
         return
