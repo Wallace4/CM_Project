@@ -16,7 +16,6 @@ def solve_plin (A, b):
 #    x = np.linalg.pinv(U) @ c
 #    print(f"{x}\n{np.linalg.inv(P)@x}")
     return spsolve(A, b)
-#    return np.linalg.lstsq(A, b, rcond=None)[0] #temporaneo, in realtà vorrei usare lu mala matrice ritorna singolare :/
 
 def norm_2 (exp):
     norm = np.linalg.norm(exp, 2)
@@ -119,7 +118,7 @@ class quadratic_problem:
         self.B = np.full(n, True)
         self.N = np.full(n, False)
 
-    @deprecated
+    #deprecated
     def set_initial_solution(self, x, y, z):
         """! Function that set the initial solution of the problem
         
@@ -133,7 +132,7 @@ class quadratic_problem:
         self.z[:] = self.__check_shape(z, dim=(n,), varname="z")
         self.logger.info(f"Successfully set the initial solutions:\nx:\n{self.x}\ny:\n{self.y}\nz:\n{self.z}")
 
-    @deprecated
+    #deprecated
     def set_initial_active_set(self, B, N):
         """! Function that set the initial active set of the problem
         
@@ -211,6 +210,59 @@ class quadratic_problem:
         self.N = ~self.B
         print(f"B:\n{self.B}\nN:\n{self.N}")
 
+    def set_initial_solution_from_basis (self): #section 5.2 del paper
+        """! Function that calculate the initial solution for the primal problem
+        
+        """
+        #qui pongo x[N] al lower bound se l != -inf, e all'upper altrimenti. Se anche l'upper è +inf allora 0, che è un casino non implementato
+        self.x[self.N] = np.where(self.l[self.N] == -np.inf, self.u[self.N]+self.q_u[self.N], self.l[self.N]-self.q_l[self.N])
+        self.x[self.N] = np.where(self.x[self.N] == np.inf, 0, self.x[self.N]) #forse da fare i tmp bounds invece che 0
+        self.z[self.B] = -self.r[self.B]
+        self.z_l[self.B] = -self.r_l[self.B] #questi sono ok perché con B x non è a nessuno dei due vincoli, quindi entrambe le z sono a 0 
+        self.z_u[self.B] = -self.r_u[self.B]
+
+#        self.logger.info(f"x[N]:\n{self.x[self.N]}\nq[N]:\n{self.q[self.N]}")
+        B_size = np.sum(self.B)
+    
+        K_I = np.block([
+            [self.H[self.B, :][:, self.B], self.A[:, self.B].T ],
+            [self.A[:, self.B],           -self.M]
+        ])
+        
+        tmp_b = np.concatenate(
+            (self.H[self.B, :][:, self.N] @ self.x[self.N] - self.c[self.B] - self.z_l[self.B] - self.z_u[self.B],
+             self.A[:, self.N] @ self.x[self.N] + self.b),
+            axis = 0
+        )
+        
+        sol = solve_plin(K_I, tmp_b).reshape((B_size + self.y.size,))
+
+#        self.logger.info(f"K_i @ x = b:\n{K_I}\n{sol}\n{tmp_b}")
+#        cond = np.allclose (K_I @ sol, tmp_b, atol=self.tol)
+#        self.logger.info(f"cond:\n{K_I @ sol}\n{cond}")
+        
+        self.x[self.B], self.y = sol[:B_size], -sol[B_size:]
+
+        tmp_z = (self.H[self.B, :][:, self.N].T @ self.x[self.B] -
+                 self.H[self.N, :][:, self.N]   @ self.x[self.N] +
+                 self.c[self.N] -
+                 self.A[:, self.N].T @ self.y) #ora, qui questa z è z_u se x[N] è al limite superiore, z_l se x[N] è al limite inferiore
+        self.z_u[self.N] = np.where(np.allclose(self.x[self.N], self.u[self.N]+self.q_u[self.N], atol=self.tol), tmp_z, 0)
+        self.z_l[self.N] = np.where(np.allclose(self.x[self.N], self.l[self.N]-self.q_l[self.N], atol=self.tol), tmp_z, 0)
+        #sopra pongo le z ad un valore di tmp_z se x è al corrispettivo bound, altrimenti 0
+
+        max_q_l = np.where(self.l[self.B]-self.x[self.B] > 0, self.l[self.B]-self.x[self.B], 0)
+        max_q_u = np.where(self.x[self.B]-self.u[self.B] > 0, self.x[self.B]-self.u[self.B], 0)
+        max_r_l = np.where(-self.z_l[self.N] > 0, -self.z_l[self.N], 0)
+        max_r_u = np.where(-self.z_u[self.N] > 0, -self.z_u[self.N], 0)
+        self.q_l[self.B] = np.where(self.q_l[self.B] > max_q_l, self.q_l[self.B], max_q_l)
+        self.q_u[self.B] = np.where(self.q_u[self.B] > max_q_u, self.q_u[self.B], max_q_u)
+        self.r_l[self.N] = np.where(self.r_l[self.N] > max_r_l, self.r_l[self.N], max_r_l)
+        self.r_u[self.N] = np.where(self.r_u[self.N] > max_r_u, self.r_u[self.N], max_r_u)
+        
+        self.logger.info(f"the generated solutions from the B and N sets are:\nx:\n{self.x}\ny:\n{self.y}\nz:\n{self.z}")
+        self.logger.info(f"the new constrains vectors are:\nq:\n{self.q}\nr:\n{self.r}")
+
     def reset_deltas (self):
         """! Function that reset the deltas values to 0
        
@@ -281,58 +333,7 @@ class quadratic_problem:
         assert np.allclose(condition_5, True, atol=self.tol), condition_5
         self.logger.info(f"l <= x[b] + q[b] <= u: {condition_6}") 
         assert np.allclose(condition_6, True, atol=self.tol), condition_6
-        return True
-
-    def set_initial_solution_from_basis (self): #section 5.2 del paper
-        """! Function that calculate the initial solution for the primal problem
-        
-        """
-        self.x[self.N] = np.where(self.l[self.N] == -np.inf, self.u[self.N]+self.q_u[self.N], self.l[self.N]-self.q_l[self.N])
-        self.x[self.N] = np.where(self.x[self.N] == np.inf, 0, self.x[self.N]) #forse da fare i tmp bounds invece che 0
-        self.z[self.B] = -self.r[self.B]
-        self.z_l[self.B] = -self.r_l[self.B]
-        self.z_u[self.B] = -self.r_u[self.B]
-
-#        self.logger.info(f"x[N]:\n{self.x[self.N]}\nq[N]:\n{self.q[self.N]}")
-        B_size = np.sum(self.B)
-    
-        K_I = np.block([
-            [self.H[self.B, :][:, self.B], self.A[:, self.B].T ],
-            [self.A[:, self.B],           -self.M]
-        ])
-        
-        tmp_b = np.concatenate(
-            (self.H[self.B, :][:, self.N] @ self.x[self.N] - self.c[self.B] - self.z_l[self.B] - self.z_u[self.B],
-             self.A[:, self.N] @ self.x[self.N] + self.b),
-            axis = 0
-        )
-        
-        sol = solve_plin(K_I, tmp_b).reshape((B_size + self.y.size,))
-
-#        self.logger.info(f"K_i @ x = b:\n{K_I}\n{sol}\n{tmp_b}")
-#        cond = np.allclose (K_I @ sol, tmp_b, atol=self.tol)
-#        self.logger.info(f"cond:\n{K_I @ sol}\n{cond}")
-        
-        self.x[self.B], self.y = sol[:B_size], -sol[B_size:]
-
-        tmp_z = (self.H[self.B, :][:, self.N].T @ self.x[self.B] -
-                 self.H[self.N, :][:, self.N]   @ self.x[self.N] +
-                 self.c[self.N] -
-                 self.A[:, self.N].T @ self.y)
-        self.z_u[self.N] = (self.H[self.B, :][:, self.N].T @ self.x[self.B] -
-                          self.H[self.N, :][:, self.N]   @ self.q[self.N] +
-                          self.c[self.N] -
-                          self.A[:, self.N].T @ self.y +
-                          self.r_l[self.N])
-
-        max_q = np.where(-self.x[self.B] > 0, -self.x[self.B], 0)
-        max_r = np.where(-self.z[self.N] > 0, -self.z[self.N], 0)
-        self.q[self.B] = np.where(self.q[self.B] > max_q, self.q[self.B], max_q)
-        self.r[self.N] = np.where(self.r[self.N] > max_r, self.r[self.N], max_r)
-        
-        self.logger.info(f"the generated solutions from the B and N sets are:\nx:\n{self.x}\ny:\n{self.y}\nz:\n{self.z}")
-        self.logger.info(f"the new constrains vectors are:\nq:\n{self.q}\nr:\n{self.r}")
-        
+        return True        
     
     def test_dual_feasible(self, relaxed=False):
         """! Function that check if the current solution satisfy the condition to be a feasible solution for the Dual problem
