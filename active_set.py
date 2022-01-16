@@ -22,7 +22,7 @@ def norm_2 (exp):
     print(norm)
     return pow(norm, 2)
 
-class quadratic_problem:
+class quadratic_problem ():
     """! The quadratic problem class
     
     Define the base class used to resolve the active set algorithms for quadratic problems
@@ -54,8 +54,8 @@ class quadratic_problem:
         @param c vector R(n)
         @param H Positive Symmetric Hessian Matrix R(n,n)
         @param M Positive Symmetric Hessian Matrix R(m,m)
-        @param q vector R(n), default to np.zeros(n)
-        @param r vector R(n), default to np.zeros(n)
+        @param l vector R(n), default to np.zeros(n)
+        @param u vector R(n), default to np.inf
         @param tol maximum tolerance for operations, defaults to 1e-8
         @param verbose if we want to log to the stdout too or not, default to False
         """
@@ -106,13 +106,11 @@ class quadratic_problem:
 
         # init solutions
         self.x = np.zeros(n)
-        self.y = np.zeros(m) 
-        self.z = np.zeros(n) #tmp bad
+        self.y = np.zeros(m)
         
         # init deltas
         self.dx = np.zeros(n)
         self.dy = np.zeros(m)
-        self.dz = np.zeros(n)
 
         # init B, N (temporary)
         self.B = np.full(n, True)
@@ -268,7 +266,6 @@ class quadratic_problem:
         """
         self.dx.fill(0)
         self.dy.fill(0)
-        self.dz.fill(0)
         self.dz_l.fill(0)
         self.dz_u.fill(0)
 
@@ -279,7 +276,7 @@ class quadratic_problem:
         """
         constraint_AMb = self.A @ self.x + self.M @ self.y - self.b
         assert np.allclose(norm_2(constraint_AMb), 0, atol=self.tol), constraint_AMb
-        constraint_x = (self.x >= self.l-self.tol) and (self.x <= self.u+self.tol)
+        constraint_x = (self.x >= self.l-self.tol) & (self.x <= self.u+self.tol)
         assert np.allclose(constraint_x, True, atol=self.tol), constraint_x
         sol = self.c @ self.x + 0.5* self.x.T @ self.H @ self.x + 0.5 * self.y.T @ self.M @ self.y
         self.logger.info(f"The solution of the system is: {sol}")
@@ -296,13 +293,13 @@ class quadratic_problem:
         condition_2 = (self.H[self.B, :][:, self.B] @ self.x[self.B] +
                        self.H[self.B, :][:, self.N] @ self.x[self.N] +
                        self.c[self.B] -
-                       self.A[:, self.B].T @ self.y - self.z[self.B])
-        self.logger.info(f"H[bb]x[b]: + H[bn]x[n]:\n + c[b] - A[b].Ty - z[b]: {condition_2}") 
+                       self.A[:, self.B].T @ self.y - self.z_l[self.B] + self.z_u[self.B])
+        self.logger.info(f"H[bb]x[b]: + H[bn]x[n]:\n + c[b] - A[b].Ty - z_l[b] + z_u[b]: {condition_2}") 
         assert np.allclose(norm_2(condition_2), 0, atol=self.tol), condition_2
         condition_3 = (self.H[self.B, :][:, self.N].T @ self.x[self.B] + 
                        self.H[self.N, :][:, self.N]   @ self.x[self.N] + self.c[self.N] - 
-                       self.A[:, self.N].T            @ self.y         - self.z_l[self.N] - self.z_u[self.N])
-        self.logger.info(f"H[bn].Tx + H[nn]x + c[n] + A[n].Ty - z[n]: {condition_3}") 
+                       self.A[:, self.N].T            @ self.y         - self.z_l[self.N] + self.z_u[self.N])
+        self.logger.info(f"H[bn].Tx + H[nn]x + c[n] + A[n].Ty - z_l[n] + z_u[n]: {condition_3}") 
         assert np.allclose(norm_2(condition_3), 0, atol=self.tol), condition_3
 
         #lower bound conditions, 
@@ -339,7 +336,7 @@ class quadratic_problem:
         
         @return True if every condition is satisfied
         """
-        condition_1 = self.H @ self.x + self.c - self.A.T @ self.y - self.z_l - self.z_u
+        condition_1 = self.H @ self.x + self.c - self.A.T @ self.y - self.z_l + self.z_u
         self.logger.info(f"Hx + c - A.Ty - z: {condition_1}") 
         assert np.allclose(norm_2(condition_1), 0, atol=self.tol), condition_1
         condition_2 = self.A @ self.x + self.M @ self.y - self.b
@@ -531,7 +528,12 @@ class quadratic_problem:
             #l = l_list[0]
             print(f"{l_list[np.argmin(self.z_l[l_list] + self.r_l[l_list])]}")
             print(f"{l_list[np.argmin(self.z_u[l_list] + self.r_u[l_list])]}")
-            l = l_list[np.min([np.argmin(self.z_l[l_list] + self.r_l[l_list]), np.argmin(self.z_u[l_list] + self.r_u[l_list])])]
+            l1 = l_list[np.argmin(self.z_l[l_list] + self.r_l[l_list])]
+            l2 = l_list[np.argmin(self.z_u[l_list] + self.r_u[l_list])]
+            if self.z_l[l1] + self.r_l[l1] < self.z_u[l2] + self.r_u[l2]:
+                l = l1
+            else:
+                l = l2
             
             if (self.N[l] == True):
                 self.N[l] = False  # prendo il primo elemento di l e lo levo da N.
@@ -606,7 +608,7 @@ class quadratic_problem:
 
             alpha_opt = math.inf if np.allclose(self.dz_u[l], 0, atol=self.tol) else -(self.z_u[l] + self.r_u[l]) / self.dz_u[l]
 
-        min_mask = self.B & (self.dx != 0)
+        min_mask = (self.dx != 0)
         to_min = np.where(self.dx < 0, (self.x - self.l + self.q_l), (self.x - self.u - self.q_u))
         to_min[~min_mask] = np.inf
         to_min[min_mask] = to_min[min_mask]/-self.dx[min_mask]
@@ -687,21 +689,22 @@ class quadratic_problem:
             + self.H[self.B][:, self.N].T @ self.dx[self.B] #moltiplicazione #Nx#B per #Bx1
             - self.A[:, self.N].T         @ self.dy[:] # moltiplicazione #Nxm per #mx1
         )
-        self.logger.info(f"delta z\n{self.dz}")
 
         if (self.z_l[l] + self.r_l[l] < 0.-self.tol):
             self.dz_l[self.N] = tmp_dz
             self.dz_l[l] = 1
+            self.logger.info(f"delta z_l\n{self.dz_l}")
             
             alpha_opt = -(self.z_l[l] + self.r_l[l])
             
         if (self.z_u[l] + self.r_u[l] < 0.-self.tol):
             self.dz_u[self.N] = tmp_dz
             self.dz_u[l] = 1
+            self.logger.info(f"delta z_u\n{self.dz_u}")
             
             alpha_opt = -(self.z_l[l] + self.r_l[l])
         
-        min_mask = self.B & (self.dx != 0)
+        min_mask = (self.dx != 0)
         to_min = np.where(self.dx < 0, (self.x - self.l + self.q_l), (self.x - self.u - self.q_u))
         to_min[~min_mask] = np.inf
         to_min[min_mask] = to_min[min_mask]/-self.dx[min_mask]
@@ -765,11 +768,15 @@ class quadratic_problem:
                 )  # non si può fare un passo, aka siamo arrivati alla nostra soluzione ottima
             #l = l_list[0]
             #sarebbe da fare un secondo argmin con l_list[argmin] dei due argmin interni ma tbh fino a che va bene, va bene così
-            print(f"{[np.argmin(self.x[l_list] - self.l[l_list] + self.q_l[l_list])]}")
-            print(f"{[np.argmax(self.x[l_list] - self.u[l_list] - self.q_u[l_list])]}")
-            print(f"{np.min([np.argmin(self.x[l_list] -self.l[l_list] + self.q_l[l_list]), np.argmax(self.x[l_list] - self.u[l_list] - self.q_u[l_list])])}")
-            l = l_list[np.min([np.argmin(self.x[l_list] -self.l[l_list] + self.q_l[l_list]), np.argmax(self.x[l_list] - self.u[l_list] - self.q_u[l_list])])]
-            
+            print(f"{l_list[np.argmin(self.x[l_list] - self.l[l_list] + self.q_l[l_list])]}")
+            print(f"{l_list[np.argmax(self.x[l_list] - self.u[l_list] - self.q_u[l_list])]}")
+            l1 = l_list[np.argmin(self.x[l_list] - self.l[l_list] + self.q_l[l_list])]
+            l2 = l_list[np.argmax(self.x[l_list] - self.u[l_list] - self.q_u[l_list])]
+            if (self.x[l1] - self.l[l1] + self.q_l[l1] < -(self.x[l2] - self.u[l2] - self.q_u[l2])):
+                l = l1
+            else:
+                l = l2
+
             if (self.B[l] == True):
                 self.B[l] = False  # prendo il primo elemento di l e lo levo da N.
                 self.dual_base(l)
@@ -830,7 +837,7 @@ class quadratic_problem:
             self.dz_l[self.N] = tmp_z
             self.logger.info(f"delta z_l\n{self.dz_l}")
 
-            alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(self.x[l] - self.l[l] + self.q_l[l])/self.dx[l]
+            alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(self.x[l] - self.l[l] + self.q_l[l])/self.dx[l] #dx > 0
             min_mask = ( self.dz_l < 0 )
             to_min = self.r_l + self.z_l
             to_min[~min_mask] = np.inf
@@ -845,8 +852,8 @@ class quadratic_problem:
             self.dz_u[l] = 1
             self.dz_u[self.N] = tmp_z
             self.logger.info(f"delta z_u\n{self.dz_u}")
-        
-            alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else (self.x[l] - self.u[l] - self.q_u[l])/self.dx[l]
+            
+            alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(self.x[l] - self.u[l] - self.q_u[l])/self.dx[l] #dx > 0
             min_mask = ( self.dz_u < 0 )
             to_min = self.r_u + self.z_u
             to_min[~min_mask] = np.inf
@@ -958,7 +965,7 @@ class quadratic_problem:
             self.dz_l[l] = tmp_dz_l
             self.logger.info(f"delta z_u:\n{self.dz_u}")
 
-            alpha_opt = (self.x[l] - self.u[l] - self.q_u[l])
+            alpha_opt = -(self.x[l] - self.u[l] - self.q_u[l])
 
             min_mask = ( self.dz_u < 0 )
             to_min = self.z_u + self.r_u

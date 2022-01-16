@@ -1,15 +1,11 @@
 import numpy as np
 from active_set import quadratic_problem
 
-def min_flow_to_qp (Q, E, b, q, u):
-    m, n = E.shape
-    A = E
-    b = b
-    c = q
-    H = 2 * Q
-#    M = np.eye(m,m)
-    M = np.zeros((m,m))
-    return A, b, c, H, M, u
+class min_flow (quadratic_problem):
+    def __init__ (self, Q, E, b, q, l, u, verbose=False):
+        m, n = E.shape
+        M = np.zeros((m,m))
+        super().__init__(E, b, q, 2*Q, M, l=l, u=u, verbose=verbose)
 
 n, m = 7, 5
 
@@ -23,13 +19,11 @@ E = np.array([[-1.,-1., 0., 0., 0., 0., 0.],
               [ 0., 0., 0., 0., 1., 0.,-1.]])
 print(np.linalg.matrix_rank(E))
 
-b = np.array([ 1., -3., 0., 0., 0.])
+b = np.array([-1., 0., 0., 0., 0.])
 q = 1 * np.ones(n)
-u = 10 * np.ones(n)
+u = 3 * np.ones(n)
 
-A, b, c, H, M, u = min_flow_to_qp(Q, E, b, q, u)
-
-qp = quadratic_problem (A, b, c, H, M, l=np.zeros(n), u=u, verbose=True)
+qp = min_flow (Q, E, b, q, np.zeros(n), u, verbose=True)
 
 B = np.array([True, False, True, False, True, False, True])
 N = ~B
