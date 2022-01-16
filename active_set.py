@@ -520,14 +520,18 @@ class quadratic_problem:
                 self.logger.info(f"The primal algorith just terminated its course. The solutions are as follows:")
                 self.logger.info(f"x:\n{self.x}")
                 self.logger.info(f"y:\n{self.y}")
-                self.logger.info(f"z:\n{self.z}")
+                self.logger.info(f"z_l:\n{self.z_l}")
+                self.logger.info(f"z_u:\n{self.z_u}")
                 return (
                     self.x,
                     self.y,
-                    self.z,
+                    self.z_l,
+                    self.z_u
                 )  # non si può fare un passo, aka siamo arrivati alla nostra soluzione ottima
             #l = l_list[0]
-            l = l_list[np.min(np.argmin(self.z_l[l_list] + self.r_l[l_list]), np.argmin(self.z_u[l_list] + self.r_u[l_list]))]
+            print(f"{l_list[np.argmin(self.z_l[l_list] + self.r_l[l_list])]}")
+            print(f"{l_list[np.argmin(self.z_u[l_list] + self.r_u[l_list])]}")
+            l = l_list[np.min([np.argmin(self.z_l[l_list] + self.r_l[l_list]), np.argmin(self.z_u[l_list] + self.r_u[l_list])])]
             
             if (self.N[l] == True):
                 self.N[l] = False  # prendo il primo elemento di l e lo levo da N.
@@ -745,20 +749,26 @@ class quadratic_problem:
         
         # --------------- Inizio loop principale
         while True:
-            l_list = np.argwhere((self.x + self.q) < 0.-self.tol)
+            l_list = np.argwhere(((self.x - self.l + self.q_l) < 0.-self.tol) | ((self.x - self.u - self.q_u) > 0.+self.tol))
             self.logger.info(f"The indexes that violate the constrains are: {l_list.flatten()}")
             if l_list.size == 0:
                 self.logger.info(f"The dual algorith just terminated its course. The solutions are as follows:")
                 self.logger.info(f"x:\n{self.x}")
                 self.logger.info(f"y:\n{self.y}")
-                self.logger.info(f"z:\n{self.z}")
+                self.logger.info(f"z_l:\n{self.z_l}")
+                self.logger.info(f"z_u:\n{self.z_u}")
                 return (
                     self.x,
                     self.y,
-                    self.z,
+                    self.z_l,
+                    self.z_u
                 )  # non si può fare un passo, aka siamo arrivati alla nostra soluzione ottima
             #l = l_list[0]
-            l = l_list[np.argmin(self.x[l_list] + self.q[l_list])]
+            #sarebbe da fare un secondo argmin con l_list[argmin] dei due argmin interni ma tbh fino a che va bene, va bene così
+            print(f"{[np.argmin(self.x[l_list] - self.l[l_list] + self.q_l[l_list])]}")
+            print(f"{[np.argmax(self.x[l_list] - self.u[l_list] - self.q_u[l_list])]}")
+            print(f"{np.min([np.argmin(self.x[l_list] -self.l[l_list] + self.q_l[l_list]), np.argmax(self.x[l_list] - self.u[l_list] - self.q_u[l_list])])}")
+            l = l_list[np.min([np.argmin(self.x[l_list] -self.l[l_list] + self.q_l[l_list]), np.argmax(self.x[l_list] - self.u[l_list] - self.q_u[l_list])])]
             
             if (self.B[l] == True):
                 self.B[l] = False  # prendo il primo elemento di l e lo levo da N.
@@ -767,7 +777,7 @@ class quadratic_problem:
             else:
                 self.N[l] = False
             
-            while (self.x[l] + self.q[l]) < 0.-self.tol:
+            while (self.x[l] - self.l[l] + self.q_l[l]) < 0.-self.tol or (self.x[l] - self.u[l] - self.q_u[l]) > 0.+self.tol :
 #                input("premi per continuare...")
                 self.dual_intermediate(l)
                 self.reset_deltas()
@@ -780,8 +790,7 @@ class quadratic_problem:
         """
         self.logger.info(f"-"*20)
         self.logger.info(f"Base step of the Dual problem, done with the index: {l}")
-        
-        self.dz[l] = 1
+
         B_size = np.sum((self.B))
 
         self.logger.info(f"Hll:\n{self.H[l, l]}")
@@ -810,23 +819,43 @@ class quadratic_problem:
         self.logger.info(f"delta x:\n{self.dx}")
         self.logger.info(f"delta y:\n{self.dy}")
 
-        self.dz[self.N] = (
+        tmp_z = (
               self.H[self.N, l]           * self.dx[l] #scalare 
             + self.H[self.B][:, self.N].T @ self.dx[self.B] #moltiplicazione #Nx#B per #Bx1
             - self.A[:, self.N].T         @ self.dy[:] # moltiplicazione #Nxm per #mx1
         )
-        self.logger.info(f"delta z\n{self.dz}")
         
-        alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(self.x[l] + self.q[l])/self.dx[l]
-        min_mask = ( self.dz < 0 )
-        to_min = self.r + self.z
-        to_min[~min_mask] = np.inf
-        to_min[min_mask] = to_min[min_mask]/-self.dz[min_mask]
-        print(f"min_mask: {min_mask}")
-        print(f"z: {self.x[min_mask]} r: {self.q[min_mask]}")
-        self.logger.info(f"to_min:\n{to_min}")
-        k = np.argmin(to_min)
-        alpha_max = to_min[k]
+        if (self.x[l] - self.l[l] + self.q_l[l] < 0.-self.tol):
+            self.dz_l[l] = 1
+            self.dz_l[self.N] = tmp_z
+            self.logger.info(f"delta z_l\n{self.dz_l}")
+
+            alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(self.x[l] - self.l[l] + self.q_l[l])/self.dx[l]
+            min_mask = ( self.dz_l < 0 )
+            to_min = self.r_l + self.z_l
+            to_min[~min_mask] = np.inf
+            to_min[min_mask] = to_min[min_mask]/-self.dz_l[min_mask]
+            print(f"min_mask: {min_mask}")
+            print(f"z_l: {self.z_l[min_mask]} r_l: {self.r_l[min_mask]}")
+            self.logger.info(f"to_min:\n{to_min}")
+            k = np.argmin(to_min)
+            alpha_max = to_min[k]
+            
+        elif (self.x[l] - self.u[l] - self.q_u > 0.+self.tol):
+            self.dz_u[l] = 1
+            self.dz_u[self.N] = tmp_z
+            self.logger.info(f"delta z_u\n{self.dz_u}")
+        
+            alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else (self.x[l] - self.u[l] - self.q_u[l])/self.dx[l]
+            min_mask = ( self.dz_u < 0 )
+            to_min = self.r_u + self.z_u
+            to_min[~min_mask] = np.inf
+            to_min[min_mask] = to_min[min_mask]/-self.dz_u[min_mask]
+            print(f"min_mask: {min_mask}")
+            print(f"z_u: {self.z_u[min_mask]} r_u: {self.r_u[min_mask]}")
+            self.logger.info(f"to_min:\n{to_min}")
+            k = np.argmin(to_min)
+            alpha_max = to_min[k]
 
         alpha = min(alpha_opt, alpha_max)
         self.logger.info(f"alpha = min ( opt = {alpha_opt}; max = {alpha_max});")
@@ -839,20 +868,23 @@ class quadratic_problem:
 #            self.logger.exception(f"Step size is zero")
 #            raise Exception("Step size is zero")
         
-        self.x[l] += alpha * self.dx[l]
-        self.x[self.B] += alpha * self.dx[self.B]
-        self.y    += alpha * self.dy
-        self.z[l] += alpha * self.dz[l]
-        self.z[self.N] += alpha * self.dz[self.N]
+        self.x[l]        += alpha * self.dx[l]
+        self.x[self.B]   += alpha * self.dx[self.B]
+        self.y           += alpha * self.dy
+        self.z_l[l]      += alpha * self.dz_l[l]
+        self.z_l[self.N] += alpha * self.dz_l[self.N]
+        self.z_u[l]      += alpha * self.dz_u[l]
+        self.z_u[self.N] += alpha * self.dz_u[self.N]
         
-        if self.x[l] + self.q[l] < 0.-self.tol:
+        if (self.x[l] - self.l[l] + self.q_l[l]) < 0.-self.tol or (self.x[l] - self.u[l] - self.q_u[l]) > 0.+self.tol:
             self.logger.info(f"k: {k}")
             self.B[k] = True
             self.N[k] = False
         
         self.logger.info(f"x:\n{self.x}")
         self.logger.info(f"y:\n{self.y}")
-        self.logger.info(f"z:\n{self.z}")
+        self.logger.info(f"z_l:\n{self.z_l}")
+        self.logger.info(f"z_u:\n{self.z_u}")
         self.logger.info(f"B:\n{self.B}")
         self.logger.info(f"N:\n{self.N}")
         return
@@ -893,29 +925,50 @@ class quadratic_problem:
         self.logger.info(f"delta x:\n{self.dx}")
         self.logger.info(f"delta y:\n{self.dy}")
 
-        self.dz[self.N] = (
+        tmp_dz = (
               self.H[self.N, l]           * self.dx[l] #qui * va bene perché delta_x_l è uno scalare
             + self.H[self.B][:, self.N].T @ self.dx[self.B] #qui usiamo matmul perché è la moltiplicazione di una matrice #Nx#B per un vettore #Bx1
             - self.A[:, self.N].T         @ self.dy #come sopra, #Nxm per mx1
         )
-        self.dz[l] = (
+        tmp_dz_l = (
               self.H[l, l]           * self.dx[l] #scalare
             + self.H[self.B][:, l].T @ self.dx[self.B] # qui è un vettore 1x#B per #B
             - self.A[:, l].T         @ self.dy # qui è 1xm per mx1
         )
-        self.logger.info(f"delta z:\n{self.dz}")
 
-        alpha_opt = -(self.x[l] + self.q[l])
+        if (self.x[l] - self.l[l] + self.q_l[l] < 0.-self.tol):
+            self.dz_l[self.N] = tmp_dz
+            self.dz_l[l] = tmp_dz_l
+            self.logger.info(f"delta z_l:\n{self.dz_l}")
+            
+            alpha_opt = -(self.x[l] - self.l[l] + self.q_l[l])
 
-        min_mask = ( self.dz < 0 )
-        to_min = self.z + self.r
-        to_min[~min_mask] = np.inf
-        to_min[min_mask] = to_min[min_mask]/-self.dz[min_mask]
-        print(f"min_mask: {min_mask}")
-        print(f"x: {self.x[min_mask]} q: {self.q[min_mask]}")
-        self.logger.info(f"to_min:\n{to_min}")
-        k = np.argmin(to_min)
-        alpha_max = to_min[k]
+            min_mask = ( self.dz_l < 0 )
+            to_min = self.z_l + self.r_l
+            to_min[~min_mask] = np.inf
+            to_min[min_mask] = to_min[min_mask]/-self.dz_l[min_mask]
+            print(f"min_mask: {min_mask}")
+            print(f"z_l: {self.z_l[min_mask]} r_l: {self.r_l[min_mask]}")
+            self.logger.info(f"to_min:\n{to_min}")
+            k = np.argmin(to_min)
+            alpha_max = to_min[k]
+
+        if (self.x[l] - self.u[l] + self.q_u[l] > 0.+self.tol):
+            self.dz_l[self.N] = tmp_dz
+            self.dz_l[l] = tmp_dz_l
+            self.logger.info(f"delta z_u:\n{self.dz_u}")
+
+            alpha_opt = (self.x[l] - self.u[l] - self.q_u[l])
+
+            min_mask = ( self.dz_u < 0 )
+            to_min = self.z_u + self.r_u
+            to_min[~min_mask] = np.inf
+            to_min[min_mask] = to_min[min_mask]/-self.dz_u[min_mask]
+            print(f"min_mask: {min_mask}")
+            print(f"z_u: {self.z_u[min_mask]} r_u: {self.r_u[min_mask]}")
+            self.logger.info(f"to_min:\n{to_min}")
+            k = np.argmin(to_min)
+            alpha_max = to_min[k]
 
         alpha = min(alpha_opt, alpha_max)
         self.logger.info(f"alpha = min ( opt: {alpha_opt}; max: {alpha_max});")
@@ -928,20 +981,23 @@ class quadratic_problem:
             self.logger.exception(f"Step size is zero")
             raise Exception("Step size is zero")
 
-        self.x[l] += alpha * self.dx[l]
-        self.x[self.B] += alpha * self.dx[self.B]
-        self.y    += alpha * self.dy
-        self.z[l] += alpha * self.dz[l]
-        self.z[self.N] += alpha * self.dz[self.N]
+        self.x[l]        += alpha * self.dx[l]
+        self.x[self.B]   += alpha * self.dx[self.B]
+        self.y           += alpha * self.dy
+        self.z_l[l]      += alpha * self.dz_l[l]
+        self.z_l[self.N] += alpha * self.dz_l[self.N]
+        self.z_u[l]      += alpha * self.dz_u[l]
+        self.z_u[self.N] += alpha * self.dz_u[self.N]
         
-        if self.x[l] + self.q[l] < 0.-self.tol: #effettivamente anche alpha == alpha_max ha senso
+        if (self.x[l] - self.l[l] + self.q_l[l]) < 0.-self.tol or (self.x[l] - self.u[l] - self.q_u[l]) > 0.+self.tol: #effettivamente anche alpha == alpha_max ha senso
             self.logger.info(f"k: {k}")
             self.B[k] = True
             self.N[k] = False
         
         self.logger.info(f"x:\n{self.x}")
         self.logger.info(f"y:\n{self.y}")
-        self.logger.info(f"z:\n{self.z}")
+        self.logger.info(f"z_l:\n{self.z_l}")
+        self.logger.info(f"z_u:\n{self.z_u}")
         self.logger.info(f"B:\n{self.B}")
         self.logger.info(f"N:\n{self.N}")
         return
