@@ -15,7 +15,7 @@ n, m = 7, 5
 
 Q = np.zeros((n,n))
 #np.fill_diagonal(Q, np.random.rand(n))
-np.fill_diagonal(Q, 1)
+np.fill_diagonal(Q, 2)
 E = np.array([[-1.,-1., 0., 0., 0., 0., 0.],
               [ 1., 0.,-1., 0., 0., 0., 0.],
               [ 0., 1., 0.,-1.,-1., 0., 0.],
@@ -24,8 +24,8 @@ E = np.array([[-1.,-1., 0., 0., 0., 0., 0.],
 print(np.linalg.matrix_rank(E))
 
 b = np.array([ 1., -3., 0., 0., 0.])
-q = 2 * np.ones(n)
-u = 3 * np.ones(n)
+q = 1 * np.ones(n)
+u = 10 * np.ones(n)
 
 A, b, c, H, M, u = min_flow_to_qp(Q, E, b, q, u)
 

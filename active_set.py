@@ -841,7 +841,7 @@ class quadratic_problem:
             k = np.argmin(to_min)
             alpha_max = to_min[k]
             
-        elif (self.x[l] - self.u[l] - self.q_u > 0.+self.tol):
+        elif (self.x[l] - self.u[l] - self.q_u[l] > 0.+self.tol):
             self.dz_u[l] = 1
             self.dz_u[self.N] = tmp_z
             self.logger.info(f"delta z_u\n{self.dz_u}")
@@ -1021,7 +1021,9 @@ if __name__ == "__main__":
     
     b = np.random.rand(m)
     c = np.random.rand(n)
-    qp = quadratic_problem (A, b, c, H, M, verbose = True)
+    u = 7 * np.ones(n)
+    l = np.zeros(n)
+    qp = quadratic_problem (A, b, c, H, M, l=l, u=u, verbose = True)
 
     B = (np.random.rand(n) - np.random.rand(n)) > 0
     N = ~B
