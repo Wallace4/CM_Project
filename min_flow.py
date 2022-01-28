@@ -40,7 +40,7 @@ except:
 ineqm = np.block([ [-np.eye(n)], [np.eye(n)] ])
 ineqv = np.concatenate((np.zeros(n), u))
 print(ineqv)
-sol = cvxopt.solvers.qp(cvxopt.matrix(Q), cvxopt.matrix(q),
+sol = cvxopt.solvers.qp(cvxopt.matrix(2*Q), cvxopt.matrix(q),
                         cvxopt.matrix(ineqm), cvxopt.matrix(ineqv),
                         cvxopt.matrix(E), cvxopt.matrix(b))
 
