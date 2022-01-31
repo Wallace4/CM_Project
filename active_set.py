@@ -75,19 +75,24 @@ class quadratic_problem ():
         # shape of A is assumed to be correct
         self.A = self.__check_shape(A, varname="A")
         m, n = A.shape
+        self.a_size = n
 
+        if (np.allclose(M, 0, atol=self.tol)):
+            self.A = np.block([self.A, -np.eye(m)])
+            c = np.concatenate((c, np.zeros(m)))
+            l = np.concatenate((l, b))
+            u = np.concatenate((u, b))
+            H = np.block([[H, np.zeros((n,m))],
+                          [np.zeros((m,n)), np.zeros((m,m))]])
+            b = np.zeros(m)
+            n+= m
+            
         self.b = self.__check_shape(b, dim=(m,), varname="b")
         self.c = self.__check_shape(c, dim=(n,), varname="c")
         self.H = self.__check_shape(H, dim=(n, n), varname="H")
         self.M = self.__check_shape(M, dim=(m, m), varname="M")
 
-#        if (np.all((M == 1))): #controllo se la matrice M è 0. Se si dobbiamo usare le variabili slack
-            #self.s = self.b #dobbiamo in realtà usare y come se fosse s, in questo modo noi avremmo s come variabile, e dobbiamo solo farla rientrare entro i vincoli, visto che è l'unica variabile non vincolata.
-            #self.b = np.zeros((m,)) #b in questo caso sarà 0, mentre s sono le variabili slack che per forza devono avere il valore di b, dato che sono tutti vincoli di uguaglianza
-#            rank = np.linalg.matrix_rank(np.block([A, np.eye(m)]), tol=self.tol)
-            #TODO implementare questo cambiamento ovunque tipo
-        #else:
-        rank = np.linalg.matrix_rank(np.block([A, -M]), tol=self.tol)
+        rank = np.linalg.matrix_rank(np.block([self.A, -self.M]), tol=self.tol)
         assert (rank == m), f"Not full row rank matrix, {rank} != {m}"
 
         #init lower bound shifts and z
@@ -143,68 +148,78 @@ class quadratic_problem ():
         self.N[:] = self.__check_shape(N, dim=(n,), varname="N")
         self.logger.info(f"Successfully set the initial active set:\nB:\n{self.B}\nN:\n{self.N}")
 
-    #stuff che non funziona :/
-    def set_initial_active_set_from_factorization (self): #metodo che non funziona bene ancora
-        K = np.block([
-            [self.H,  self.A.T],
-            [self.A, -self.M  ]
-        ])
-        L, D, P = ldl(K)
-
-        last_ele = -1
-        for ele in P:
-            i = ele+1
-            if (last_ele > ele):
-                break
-        print(P)
-        for ele in P[i:]: #di default B è tutto vero, e N è tutto falso
-            print(ele)
-            self.B[ele] = False
-            self.N[ele] = True
-        assert all(np.logical_xor(B,N)), "Sets are not valid. |Union| should be n and |Intersection| should be 0"
-        self.logger.info(f"Successfully set the initial active set:\nB:\n{self.B}\nN:\n{self.N}")
-        print(P)
-
     #attualmente utilizzata
     def set_initial_active_set_from_lu (self):
-        P, L, U = lu (self.A.T)
-        m, n = self.A.shape
-        l = min(m, n)
-        A_T_approx = L[:l][:,:l] @ U[:l][:,:l]
-        print(f"P:\n{P}\nL:\n{L}\nU:\n{U}\n") #se n > m tutto torna 
-        print(f"approx:\n{A_T_approx}\nA.T:\n{self.A.T}")
-
-        self.B.fill(False)
-        self.N.fill(True)
-
-        for row in A_T_approx:
-            for i, a_row in enumerate(self.A.T):
-                if (np.allclose(row, a_row, atol=self.tol)):
-                    self.B[i] = True
-
-        print(f"B:\n{self.B}\nN:\n{~self.B}")
-        print(f"A[B]:\n{self.A[:, self.B]}\nA[N]:\n{self.A[:, ~self.B]}")
+        """
 
         """
-        Z = np.block([
-            [-np.linalg.pinv(self.A[:, self.B]) @ self.A[:, ~self.B]],
-            [np.eye(max(m,n) - l)]
-        ])
+        def crash (A, xl, xu, cl, cu):
+            rowState = cl < cu -self.tol #le righe di A (quindi i valori di s) che sono liberi, e quindi possono far parte della base
+            m, n = A.shape
+            colState = np.zeros(n, dtype=bool)
+            pivot = np.zeros(m)
+            pivot[rowState] = 2 #righe già pivotate dalla matrice identità che sarà.
+            nBase = sum(rowState) #conto il numero di elementi che sono a true qui, questa è la (temporanea) dimensione della Base. Dobbiamo raggiungere m
 
-        tmp_H = Z.T @ self.H @ Z
+            for j in range(n):
+                if ~colState[j] or np.allclose(xl[j], xu[j], atol=self.tol): #se abbiamo già trovato la colonna, oppure i valori di x sono fissi, skippiamo
+                    continue
 
-        R = cholesky(tmp_H)
+                Acol = np.argwhere(np.allclose(A[:, j], 0, atol=self.tol))  #prendiamo i valori diversi da 0 nella matrice.
+                if Acol.size == 0: #colonna piena di 0 o si avvicina.
+                    continue
 
-        print(f"Z:\n{Z}\nZ.THZ:\n{tmp_H}\nR:\n{R}")
+                Amax = max (abs (A[Acol, j]))
+                Atol = Amax * 0.1
+                Atest = abs(A[Acol, j]) > Atol#recupero solo gli elementi che sono significativi
+                nz = Atest.size
+                npiv = 0 #il numero di pivot che sono stati trovati a questo giro
+                ipiv = -np.ones(2) #l'indice degli ultimi pivot presi, default è -1 perché gli array iniziano da 0
+                Apiv = np.zeros(2) #il valore dell'ultimo pivot della colonna trovato
+                
+                for i in range(nz):
+                    if (Atest[i]):
+                        Ai = abs(A[i,j])
+                        ip = pivot[i] #controllo se su quella riga c'è già un pivot o se è possibile prenderne uno.
+                        if (ip < 2): #2 indica un pivot perfetto, mentre 0 è non ancora trovato, mentre 1 è trovato ma con valori sotto.
+                            if Apiv(ip) < Ai: #controllo se il valore che abbiamo salvato del pivot a quella riga è minore del valore che abbiamo appena trovato
+                                Apiv[ip] = Ai #se si me lo salvo e diventa il prossimo concorrente come pivot per quella riga
+                                ipiv[ip] = i
+                        else: #ho trovato valore su una riga che ha già un pivot
+                            npiv += 1 #mi segno che abbiamo un pivot fatto bene
 
-        mask = np.full(max(n,m)-l, False)
-        for i in range(R.shape[0]):
-            if (R[i, i] is not 0):
-                mask[i] = True
+                if (ipiv[0] == -1 and npiv == 0): #Se non abbiamo trovato pivot unmarked e il numero di pivot preesistenti è 0,
+                    i = ipiv[1] #allora usiamo le righe che hanno già un pivot ma di cui ne abbiamo trovato di migliore
+                else:
+                    i = ipiv[0] #se no andiamo di quella unmarked. Ricordiamo che npiv è 0 solo se non sono stati trovati pivot da 3, quindi fissi.
+                    #vogliamo quindi priotizzare di prendere pivot che non sono stati già presi invece di aggiornare vecchi.
 
-        #self.B[~self.B] = mask
+                if i >= 0: #abbiamo un pivot figo da usare.
+                    pivot[i] = 2 #lo mettiamocome usato
+                    colState[j] = True
+                    nBase += 1 #abbiamo trovato un altro elemento e quindi aggiorniamo la dimensione.
 
-        """ #stuff che potrebbe essere utile in futuro
+                    if (nBase >= m):
+                        break
+
+                    for i in range(nz):
+                        if (Atest[i]):
+                            Ai = abs(A[i,j])
+                            if (Ai > Atol):
+                                if (pivot[i] == 0):
+                                    pivot[i] = 1 #aggiorno il pivot perché so che ci saranno valori che potrebbero disturbare sotto di lui. (o sopra)
+            #padding
+
+            for i in range(m-nBase): #se ci sono ancora elementi che possiamo aggiungere alla base, allora li aggiungiamo dalla matrice identità.
+                if (pivot[i] < 2): #non è stata presa come colonna di A, allora la prendiamo come riga, quindi come colonna della matrice identità.
+                    nBase += 1
+                    rowState[i] = True
+                    if (nBase >= m):
+                        break
+
+            return np.concatenate((colState, rowState))
+
+        self.B = crash(self.A[:, :self.a_size], self.l[:self.a_size], self.u[:self.a_size], self.l[self.a_size:], self.u[self.a_size:])
         self.N = ~self.B
         print(f"B:\n{self.B}\nN:\n{self.N}")
 
