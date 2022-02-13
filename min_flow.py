@@ -1,6 +1,5 @@
 import numpy as np
-import quadprog
-import pickle5 as pickle
+import pickle
 import cvxopt
 from active_set import quadratic_problem
 
@@ -30,32 +29,30 @@ with open("Data/problem6.pickle", "rb") as f:
     E, Q_diag, q, b, u, solution = pickle.load(f)
 Q = np.diag(Q_diag)
 E = E.toarray()
+E, b = E[:-1], b[:-1] #per rendere E linearmente indipendente
+u = np.nan_to_num(u, posinf=1e6)
 m, n = E.shape
 
 qp = min_flow (Q, E, b, q, np.zeros(n), u, verbose=True)
 
-B = np.array([ True, True, True, True, False, True, True, True, True, True])
+B = np.array([ False, True, True, True, False, True, True, True])
 N = ~B
 
 #qp.set_initial_active_set_from_factorization()
-try:
-    qp.solve()
-except:
-    print("oh no")
+
+qp.solve()
 
 #print(quadprog.solve_qp(Q, q, E, b, m, True))
-Q = np.block([ [Q, np.zeros((n,m))],
-               [np.zeros((m,n)), np.zeros((m,m))]])
-q = np.concatenate((q, np.zeros(m)))
-E = np.block([ [E, -np.eye(m)]])
-ineqm = np.block([ [-np.eye(n+m)], [np.eye(n+m)] ])
-ineqv = np.concatenate((np.zeros(n), b, u, b))
+
+ineqm = np.block([ [-np.eye(n)], [np.eye(n)] ])
+ineqv = np.concatenate((np.zeros(n), u))
 print(ineqv)
 sol = cvxopt.solvers.qp(cvxopt.matrix(2*Q), cvxopt.matrix(q),
                         cvxopt.matrix(ineqm), cvxopt.matrix(ineqv),
                         cvxopt.matrix(E), cvxopt.matrix(b))
 
-print (f"x: {sol['x']}y: {sol['y']}z: {sol['z']}s:{sol['s']}")
+#print (f"x: {sol['x']}y: {sol['y']}z: {sol['z']}s:{sol['s']}")
+print (f"x: {sol['x'][:n]}")
 print (f"primal obj = {sol['primal objective']}")
 print (f"dual obj = {sol['dual objective']}")
 print (f"real solution: {solution}")

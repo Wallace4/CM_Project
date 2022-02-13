@@ -77,15 +77,15 @@ class quadratic_problem ():
         m, n = A.shape
         self.a_size = n
 
-        if (np.allclose(M, 0, atol=self.tol)):
-            self.A = np.block([self.A, -np.eye(m)])
-            c = np.concatenate((c, np.zeros(m)))
-            l = np.concatenate((l, b))
-            u = np.concatenate((u, b))
-            H = np.block([[H, np.zeros((n,m))],
-                          [np.zeros((m,n)), np.zeros((m,m))]])
-            b = np.zeros(m)
-            n+= m
+        # if (np.allclose(M, 0, atol=self.tol)):
+        #     self.A = np.block([self.A, -np.eye(m)])
+        #     c = np.concatenate((c, np.zeros(m)))
+        #     l = np.concatenate((l, b))
+        #     u = np.concatenate((u, b))
+        #     H = np.block([[H, np.zeros((n,m))],
+        #                   [np.zeros((m,n)), np.zeros((m,m))]])
+        #     b = np.zeros(m)
+        #     n+= m
             
         self.b = self.__check_shape(b, dim=(m,), varname="b")
         self.c = self.__check_shape(c, dim=(n,), varname="c")
@@ -210,16 +210,31 @@ class quadratic_problem ():
                                     pivot[i] = 1 #aggiorno il pivot perché so che ci saranno valori che potrebbero disturbare sotto di lui. (o sopra)
             #padding
 
-            for i in range(m-nBase): #se ci sono ancora elementi che possiamo aggiungere alla base, allora li aggiungiamo dalla matrice identità.
-                if (pivot[i] < 2): #non è stata presa come colonna di A, allora la prendiamo come riga, quindi come colonna della matrice identità.
-                    nBase += 1
-                    rowState[i] = True
-                    if (nBase >= m):
-                        break
+            if (rowState != None):
+                for i in range(m-nBase): #se ci sono ancora elementi che possiamo aggiungere alla base, allora li aggiungiamo dalla matrice identità.
+                    if (pivot[i] < 2): #non è stata presa come colonna di A, allora la prendiamo come riga, quindi come colonna della matrice identità.
+                        nBase += 1
+                        rowState[i] = True
+                        if (nBase >= m):
+                            break
 
             return np.concatenate((colState, rowState))
 
-        self.B = crash(self.A[:, :self.a_size], self.l[:self.a_size], self.u[:self.a_size], self.l[self.a_size:], self.u[self.a_size:])
+        #self.B = crash(self.A[:, :self.a_size], self.l[:self.a_size], self.u[:self.a_size], self.l[self.a_size:], self.u[self.a_size:])
+        m, n = self.A.shape
+        self.B.fill(False)
+        print(self.A)
+        for i in range(m):
+            pivots = np.argwhere(self.A[i] != 0)
+            for pivot in pivots:
+                if self.B[pivot] == False:
+                    print(pivot)
+                    self.B[pivot] = True
+                    break
+            
+        print(self.A[:, self.B])
+        print(sum(self.B) == m)
+            
         self.N = ~self.B
         print(f"B:\n{self.B}\nN:\n{self.N}")
 
@@ -321,9 +336,9 @@ class quadratic_problem ():
         condition_4_l = self.z_l[self.B] + self.r_l[self.B]
         self.logger.info(f"z_l[b] + r_l[b]: {condition_4_l}")
         if (not relaxed):
-            assert np.allclose(condition_4_l, 0, atol=self.tol), condition_4 #normal condition
+            assert np.allclose(condition_4_l, 0, atol=self.tol), condition_4_l #normal condition
         else:
-            assert np.all(condition_4_l <= 0.+self.tol), condition_4 #relaxed condition
+            assert np.all(condition_4_l <= 0.+self.tol), condition_4_l #relaxed condition
         condition_5_l = np.allclose(self.x[self.N] + self.q_l[self.N], self.l[self.N], atol=self.tol)
         self.logger.info(f"x[n] + q_l[n]: {condition_5_l}")
         condition_6_l = (self.x[self.B] + self.q_l[self.B] >= self.l[self.B]-self.tol)
@@ -332,9 +347,9 @@ class quadratic_problem ():
         condition_4_u = self.z_u[self.B] + self.r_u[self.B]
         self.logger.info(f"z_u[b] + r_u[b]: {condition_4_u}")
         if (not relaxed):
-            assert np.allclose(condition_4_u, 0., atol=self.tol), condition_4 #normal condition
+            assert np.allclose(condition_4_u, 0., atol=self.tol), condition_4_u #normal condition
         else:
-            assert np.all(condition_4_u <= 0.+self.tol), condition_4 #relaxed condition
+            assert np.all(condition_4_u <= 0.+self.tol), condition_4_u #relaxed condition
         condition_5_u = np.allclose (self.x[self.N] + self.q_u[self.N], self.u[self.N], atol=self.tol)
         self.logger.info(f"x[n] + q_u[n]: {condition_5_u}")
         condition_6_u = (self.x[self.B] + self.q_u[self.B] <= self.u[self.B]+self.tol)
@@ -863,12 +878,12 @@ class quadratic_problem ():
             k = np.argmin(to_min)
             alpha_max = to_min[k]
             
-        elif (self.x[l] - self.u[l] - self.q_u[l] > 0.+self.tol):
+        elif (-self.x[l] + self.u[l] + self.q_u[l] < 0.-self.tol):
             self.dz_u[l] = 1
             self.dz_u[self.N] = tmp_z
             self.logger.info(f"delta z_u\n{self.dz_u}")
             
-            alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(self.x[l] - self.u[l] - self.q_u[l])/self.dx[l] #dx > 0
+            alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(-self.x[l] + self.u[l] + self.q_u[l])/self.dx[l] #dx > 0
             min_mask = ( self.dz_u < 0 )
             to_min = self.r_u + self.z_u
             to_min[~min_mask] = np.inf
