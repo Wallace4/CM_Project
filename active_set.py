@@ -8,6 +8,7 @@ import math
 import logging
 import sys
 import argparse
+import pdb
 
 def solve_plin (A, b):
 #    A_i = np.linalg.pinv (A)
@@ -19,7 +20,6 @@ def solve_plin (A, b):
 
 def norm_2 (exp):
     norm = np.linalg.norm(exp, 2)
-    print(norm)
     return pow(norm, 2)
 
 class quadratic_problem ():
@@ -222,21 +222,23 @@ class quadratic_problem ():
 
         #self.B = crash(self.A[:, :self.a_size], self.l[:self.a_size], self.u[:self.a_size], self.l[self.a_size:], self.u[self.a_size:])
         m, n = self.A.shape
-        self.B.fill(False)
-        print(self.A)
-        for i in range(m):
-            pivots = np.argwhere(self.A[i] != 0)
-            for pivot in pivots:
-                if self.B[pivot] == False:
-                    print(pivot)
-                    self.B[pivot] = True
-                    break
+        # self.B.fill(False)
+        # print(self.A)
+        # for i in range(m):
+        #     pivots = np.argwhere(self.A[i] != 0)
+        #     for pivot in pivots:
+        #         if self.B[pivot] == False:
+        #             print(pivot)
+        #             self.B[pivot] = True
+        #             break
             
-        print(self.A[:, self.B])
-        print(sum(self.B) == m)
+        # print(self.A[:, self.B])
+        # print(sum(self.B) == m)
+
+        self.B[:m] = True
             
         self.N = ~self.B
-        print(f"B:\n{self.B}\nN:\n{self.N}")
+        self.logger.info(f"B:\n{self.B}\nN:\n{self.N}")
 
     def set_initial_solution_from_basis (self): #section 5.2 del paper
         """! Function that calculate the initial solution for the primal problem
@@ -323,13 +325,13 @@ class quadratic_problem ():
         condition_2 = (self.H[self.B, :][:, self.B] @ self.x[self.B] +
                        self.H[self.B, :][:, self.N] @ self.x[self.N] +
                        self.c[self.B] -
-                       self.A[:, self.B].T @ self.y - self.z_l[self.B] + self.z_u[self.B])
+                       self.A[:, self.B].T @ self.y + self.z_l[self.B] - self.z_u[self.B])
         self.logger.info(f"H[bb]x[b]: + H[bn]x[n]:\n + c[b] - A[b].Ty - z_l[b] + z_u[b]: {condition_2}") 
         assert np.allclose(norm_2(condition_2), 0, atol=self.tol), condition_2
         condition_3 = (self.H[self.B, :][:, self.N].T @ self.x[self.B] + 
                        self.H[self.N, :][:, self.N]   @ self.x[self.N] + self.c[self.N] - 
-                       self.A[:, self.N].T            @ self.y         - self.z_l[self.N] + self.z_u[self.N])
-        self.logger.info(f"H[bn].Tx + H[nn]x + c[n] + A[n].Ty - z_l[n] + z_u[n]: {condition_3}") 
+                       self.A[:, self.N].T            @ self.y         + self.z_l[self.N] - self.z_u[self.N])
+        self.logger.info(f"H[bn].Tx + H[nn]x + c[n] - A[n].Ty - z_l[n] + z_u[n]: {condition_3}") 
         assert np.allclose(norm_2(condition_3), 0, atol=self.tol), condition_3
 
         #lower bound conditions, 
@@ -366,7 +368,7 @@ class quadratic_problem ():
         
         @return True if every condition is satisfied
         """
-        condition_1 = self.H @ self.x + self.c - self.A.T @ self.y - self.z_l + self.z_u
+        condition_1 = self.H @ self.x + self.c - self.A.T @ self.y + self.z_l - self.z_u
         self.logger.info(f"Hx + c - A.Ty - z: {condition_1}") 
         assert np.allclose(norm_2(condition_1), 0, atol=self.tol), condition_1
         condition_2 = self.A @ self.x + self.M @ self.y - self.b
@@ -712,6 +714,7 @@ class quadratic_problem ():
         # robo da risolvere
         self.dx[l], self.dx[self.B], self.dy[:] = tmp_sol[0], tmp_sol[1: B_size +1], -tmp_sol[B_size + 1:]
         self.logger.info(f"delta x:\n{self.dx}")
+        print(self.dx[l])
         self.logger.info(f"delta y:\n{self.dy}")
 
         tmp_dz = (
@@ -732,7 +735,7 @@ class quadratic_problem ():
             self.dz_u[l] = 1
             self.logger.info(f"delta z_u\n{self.dz_u}")
             
-            alpha_opt = -(self.z_l[l] + self.r_l[l])
+            alpha_opt = -(self.z_u[l] + self.r_u[l])
         
         min_mask = (self.dx != 0)
         to_min = np.where(self.dx < 0, (self.x - self.l + self.q_l), (self.x - self.u - self.q_u))
@@ -740,6 +743,7 @@ class quadratic_problem ():
         to_min[min_mask] = to_min[min_mask]/-self.dx[min_mask]
         self.logger.info(f"to_min:\n{to_min[self.B]}")
         k = np.argmin(to_min)
+        print(to_min)
         alpha_max = to_min[k]
 
         alpha = min(alpha_opt, alpha_max)
@@ -991,11 +995,11 @@ class quadratic_problem ():
             alpha_max = to_min[k]
 
         if (self.x[l] - self.u[l] + self.q_u[l] > 0.+self.tol):
-            self.dz_l[self.N] = tmp_dz
-            self.dz_l[l] = tmp_dz_l
+            self.dz_u[self.N] = tmp_dz
+            self.dz_u[l] = tmp_dz_l
             self.logger.info(f"delta z_u:\n{self.dz_u}")
 
-            alpha_opt = -(self.x[l] - self.u[l] - self.q_u[l])
+            alpha_opt = (-self.x[l] + self.u[l] + self.q_u[l])
 
             min_mask = ( self.dz_u < 0 )
             to_min = self.z_u + self.r_u
