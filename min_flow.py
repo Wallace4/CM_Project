@@ -25,7 +25,7 @@ class min_flow (quadratic_problem):
 #q = 1 * np.ones(n)
 #u = 3 * np.ones(n)
 
-with open("Data/problem1.pickle", "rb") as f:
+with open("Data/problem2.pickle", "rb") as f:
     E, Q_diag, q, b, u, solution = pickle.load(f)
 Q = np.diag(Q_diag)
 E = E.toarray()
