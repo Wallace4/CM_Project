@@ -307,9 +307,9 @@ class quadratic_problem ():
         @return The result of the problem [ cx + 0.5x.THx + 0.5y.TMy ] with the current solution that satisfy the constrains [Ax + My = b ] and [x >= 0]
         """
         constraint_AMb = self.A @ self.x + self.M @ self.y - self.b
-        assert np.allclose(norm_2(constraint_AMb), 0, atol=self.tol), constraint_AMb
+        assert np.allclose(norm_2(constraint_AMb), 0, atol=self.tol), f"AMb: {constraint_AMb}"
         constraint_x = (self.x >= self.l-self.tol) & (self.x <= self.u+self.tol)
-        assert np.allclose(constraint_x, True, atol=self.tol), constraint_x
+        assert np.allclose(constraint_x, True, atol=self.tol), "x: {constraint_x}"
         sol = self.c @ self.x + 0.5* self.x.T @ self.H @ self.x + 0.5 * self.y.T @ self.M @ self.y
         self.logger.info(f"The solution of the system is: {sol}")
         return sol
@@ -588,7 +588,7 @@ class quadratic_problem ():
         self.logger.info("-"*20)
         self.logger.info(f"Base iteration of the Primal Problem, with the index: {l}")
         
-        self.dx[l] = 1.
+        self.dx[l] = 1. if (self.x[l] - self.u[l] - self.q_u[l]) < 0-self.tol else 0. #se siamo già al bound con l non proviamo ad avanzare
         B_size = np.sum((self.B))
         
         self.logger.info(f"Hbb:\n{self.H[self.B, :][:, self.B]}")
@@ -627,24 +627,27 @@ class quadratic_problem ():
             - self.A[:, l].T         @ self.dy # qui è 1xm per mx1
         )
         if (self.z_l[l] + self.r_l[l] < 0.-self.tol):
-            self.dz_l[self.N] = tmp_dz
+            #self.dz_l[self.N] = tmp_dz
             self.dz_l[l] = tmp_dz_l
-            self.logger.info(f"delta z_l:\n{self.dz_l}")
 
             alpha_opt = math.inf if np.allclose(self.dz_l[l], 0, atol=self.tol) else -(self.z_l[l] + self.r_l[l]) / self.dz_l[l]
     
         if (self.z_u[l] + self.r_u[l] < 0.-self.tol): #questi due if, in teoria, sono uno l'opposto dell'altro. o vale uno o vale l'altro.
-            self.dz_u[self.N] = tmp_dz
+            #self.dz_u[self.N] = tmp_dz
             self.dz_u[l] = tmp_dz_l
-            self.logger.info(f"delta z_u:\n{self.dz_u}")
 
             alpha_opt = math.inf if np.allclose(self.dz_u[l], 0, atol=self.tol) else -(self.z_u[l] + self.r_u[l]) / self.dz_u[l]
+
+        self.dz_l[self.N] = np.where(self.z_l[self.N] + self.r_l[self.N] < 0-self.tol, tmp_dz, 0)
+        self.dz_u[self.N] = np.where(self.z_u[self.N] + self.r_u[self.N] < 0-self.tol, tmp_dz, 0)
+        self.logger.info(f"delta z_l\n{self.dz_l}")
+        self.logger.info(f"delta z_u\n{self.dz_u}")
 
         min_mask = (self.dx != 0)
         to_min = np.where(self.dx < 0, (self.x - self.l + self.q_l), (self.x - self.u - self.q_u))
         to_min[~min_mask] = np.inf
         to_min[min_mask] = to_min[min_mask]/-self.dx[min_mask]
-        self.logger.info(f"to_min:\n{to_min[self.B]}\n")
+        self.logger.info(f"to_min:\n{to_min}\n")
         k = np.argmin(to_min)
         alpha_max = to_min[k]
 
@@ -724,23 +727,29 @@ class quadratic_problem ():
         )
 
         if (self.z_l[l] + self.r_l[l] < 0.-self.tol):
-            self.dz_l[self.N] = tmp_dz
+            #self.dz_l[self.N] = tmp_dz
             self.dz_l[l] = 1
-            self.logger.info(f"delta z_l\n{self.dz_l}")
             
             alpha_opt = -(self.z_l[l] + self.r_l[l])
             
         if (self.z_u[l] + self.r_u[l] < 0.-self.tol):
-            self.dz_u[self.N] = tmp_dz
+            #self.dz_u[self.N] = tmp_dz
             self.dz_u[l] = 1
-            self.logger.info(f"delta z_u\n{self.dz_u}")
+            print(self.z_u[l])
             
             alpha_opt = -(self.z_u[l] + self.r_u[l])
+
+        self.dz_l[self.N] = np.where(self.z_l[self.N] + self.r_l[self.N] < 0-self.tol, tmp_dz, 0)
+        self.dz_u[self.N] = np.where(self.z_u[self.N] + self.r_u[self.N] < 0-self.tol, tmp_dz, 0)
+        self.logger.info(f"delta z_l\n{self.dz_l[self.N]} - {self.z_l[self.N]}")
+        self.logger.info(f"delta z_u\n{self.dz_u[self.N]} - {self.z_u[self.N]}")
         
         min_mask = (self.dx != 0)
         to_min = np.where(self.dx < 0, (self.x - self.l + self.q_l), (self.x - self.u - self.q_u))
         to_min[~min_mask] = np.inf
         to_min[min_mask] = to_min[min_mask]/-self.dx[min_mask]
+        print(f"z_u: {self.z_u[min_mask]} r_u: {self.r_u[min_mask]}")
+        print(f"z_l: {self.z_l[min_mask]} r_l: {self.r_l[min_mask]}")
         self.logger.info(f"to_min:\n{to_min[self.B]}")
         k = np.argmin(to_min)
         print(to_min)
@@ -860,7 +869,7 @@ class quadratic_problem ():
         self.logger.info(f"delta x:\n{self.dx}")
         self.logger.info(f"delta y:\n{self.dy}")
 
-        tmp_z = (
+        tmp_dz = (
               self.H[self.N, l]           * self.dx[l] #scalare 
             + self.H[self.B][:, self.N].T @ self.dx[self.B] #moltiplicazione #Nx#B per #Bx1
             - self.A[:, self.N].T         @ self.dy[:] # moltiplicazione #Nxm per #mx1
@@ -868,35 +877,32 @@ class quadratic_problem ():
         
         if (self.x[l] - self.l[l] + self.q_l[l] < 0.-self.tol):
             self.dz_l[l] = 1
-            self.dz_l[self.N] = tmp_z
-            self.logger.info(f"delta z_l\n{self.dz_l}")
+            #self.dz_l[self.N] = tmp_dz
 
             alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(self.x[l] - self.l[l] + self.q_l[l])/self.dx[l] #dx > 0
-            min_mask = ( self.dz_l < 0 )
-            to_min = self.r_l + self.z_l
-            to_min[~min_mask] = np.inf
-            to_min[min_mask] = to_min[min_mask]/-self.dz_l[min_mask]
-            print(f"min_mask: {min_mask}")
-            print(f"z_l: {self.z_l[min_mask]} r_l: {self.r_l[min_mask]}")
-            self.logger.info(f"to_min:\n{to_min}")
-            k = np.argmin(to_min)
-            alpha_max = to_min[k]
             
         elif (-self.x[l] + self.u[l] + self.q_u[l] < 0.-self.tol):
             self.dz_u[l] = 1
-            self.dz_u[self.N] = tmp_z
-            self.logger.info(f"delta z_u\n{self.dz_u}")
+            #self.dz_u[self.N] = tmp_dz
             
             alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(-self.x[l] + self.u[l] + self.q_u[l])/self.dx[l] #dx > 0
-            min_mask = ( self.dz_u < 0 )
-            to_min = self.r_u + self.z_u
-            to_min[~min_mask] = np.inf
-            to_min[min_mask] = to_min[min_mask]/-self.dz_u[min_mask]
-            print(f"min_mask: {min_mask}")
-            print(f"z_u: {self.z_u[min_mask]} r_u: {self.r_u[min_mask]}")
-            self.logger.info(f"to_min:\n{to_min}")
-            k = np.argmin(to_min)
-            alpha_max = to_min[k]
+
+        self.dz_l[self.N] = np.where(self.z_l[self.N] + self.r_l[self.N] < 0-self.tol, tmp_dz, 0)
+        self.dz_u[self.N] = np.where(self.z_u[self.N] + self.r_u[self.N] < 0-self.tol, tmp_dz, 0)
+        self.logger.info(f"delta z_l\n{self.dz_l}")
+        self.logger.info(f"delta z_u\n{self.dz_u}")
+
+        min_mask = ( self.dz_u < 0 ) | ( self.dz_l < 0)
+        to_min = self.r_u + self.z_u + self.r_l + self.z_l 
+        to_min[~min_mask] = np.inf
+        to_min[min_mask] = to_min[min_mask]/-(self.dz_u[min_mask] + self.dz_l[min_mask])
+
+        print(f"min_mask: {min_mask}")
+        print(f"z_u: {self.z_u[min_mask]} r_u: {self.r_u[min_mask]}")
+        print(f"z_l: {self.z_l[min_mask]} r_l: {self.r_l[min_mask]}")
+        self.logger.info(f"to_min:\n{to_min}")
+        k = np.argmin(to_min)
+        alpha_max = to_min[k]
 
         alpha = min(alpha_opt, alpha_max)
         self.logger.info(f"alpha = min ( opt = {alpha_opt}; max = {alpha_max});")
@@ -978,38 +984,35 @@ class quadratic_problem ():
         )
 
         if (self.x[l] - self.l[l] + self.q_l[l] < 0.-self.tol):
-            self.dz_l[self.N] = tmp_dz
+            #self.dz_l[self.N] = tmp_dz
             self.dz_l[l] = tmp_dz_l
-            self.logger.info(f"delta z_l:\n{self.dz_l}")
+            #self.dx[l] = 1.
             
             alpha_opt = -(self.x[l] - self.l[l] + self.q_l[l])
 
-            min_mask = ( self.dz_l < 0 )
-            to_min = self.z_l + self.r_l
-            to_min[~min_mask] = np.inf
-            to_min[min_mask] = to_min[min_mask]/-self.dz_l[min_mask]
-            print(f"min_mask: {min_mask}")
-            print(f"z_l: {self.z_l[min_mask]} r_l: {self.r_l[min_mask]}")
-            self.logger.info(f"to_min:\n{to_min}")
-            k = np.argmin(to_min)
-            alpha_max = to_min[k]
-
         if (self.x[l] - self.u[l] + self.q_u[l] > 0.+self.tol):
-            self.dz_u[self.N] = tmp_dz
+            #self.dz_u[self.N] = tmp_dz
             self.dz_u[l] = tmp_dz_l
-            self.logger.info(f"delta z_u:\n{self.dz_u}")
+            #self.dx[l] = -1.
 
             alpha_opt = (-self.x[l] + self.u[l] + self.q_u[l])
 
-            min_mask = ( self.dz_u < 0 )
-            to_min = self.z_u + self.r_u
-            to_min[~min_mask] = np.inf
-            to_min[min_mask] = to_min[min_mask]/-self.dz_u[min_mask]
-            print(f"min_mask: {min_mask}")
-            print(f"z_u: {self.z_u[min_mask]} r_u: {self.r_u[min_mask]}")
-            self.logger.info(f"to_min:\n{to_min}")
-            k = np.argmin(to_min)
-            alpha_max = to_min[k]
+        self.dz_l[self.N] = np.where(self.z_l[self.N] + self.r_l[self.N] < 0-self.tol, tmp_dz, 0)
+        self.dz_u[self.N] = np.where(self.z_u[self.N] + self.r_u[self.N] < 0-self.tol, tmp_dz, 0)
+        self.logger.info(f"delta z_l\n{self.dz_l}")
+        self.logger.info(f"delta z_u\n{self.dz_u}")
+
+        min_mask = ( self.dz_u < 0 ) | ( self.dz_l < 0)
+        to_min = self.r_u + self.z_u + self.r_l + self.z_l 
+        to_min[~min_mask] = np.inf
+        to_min[min_mask] = to_min[min_mask]/-(self.dz_u[min_mask] + self.dz_l[min_mask])
+
+        print(f"min_mask: {min_mask}")
+        print(f"z_u: {self.z_u[min_mask]} r_u: {self.r_u[min_mask]}")
+        print(f"z_l: {self.z_l[min_mask]} r_l: {self.r_l[min_mask]}")
+        self.logger.info(f"to_min:\n{to_min}")
+        k = np.argmin(to_min)
+        alpha_max = to_min[k]
 
         alpha = min(alpha_opt, alpha_max)
         self.logger.info(f"alpha = min ( opt: {alpha_opt}; max: {alpha_max});")
