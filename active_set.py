@@ -325,13 +325,13 @@ class quadratic_problem ():
         condition_2 = (self.H[self.B, :][:, self.B] @ self.x[self.B] +
                        self.H[self.B, :][:, self.N] @ self.x[self.N] +
                        self.c[self.B] -
-                       self.A[:, self.B].T @ self.y - self.z_l[self.B] + self.z_u[self.B])
-        self.logger.info(f"H[bb]x[b]: + H[bn]x[n]:\n + c[b] - A[b].Ty - z_l[b] + z_u[b]: {condition_2}") 
+                       self.A[:, self.B].T @ self.y + self.z_l[self.B] - self.z_u[self.B])
+        self.logger.info(f"H[bb]x[b]: + H[bn]x[n]:\n + c[b] - A[b].Ty + z_l[b] - z_u[b]: {condition_2}") 
         assert np.allclose(norm_2(condition_2), 0, atol=self.tol), condition_2
         condition_3 = (self.H[self.B, :][:, self.N].T @ self.x[self.B] + 
                        self.H[self.N, :][:, self.N]   @ self.x[self.N] + self.c[self.N] - 
-                       self.A[:, self.N].T            @ self.y         - self.z_l[self.N] + self.z_u[self.N])
-        self.logger.info(f"H[bn].Tx + H[nn]x + c[n] - A[n].Ty - z_l[n] + z_u[n]: {condition_3}") 
+                       self.A[:, self.N].T            @ self.y         + self.z_l[self.N] - self.z_u[self.N])
+        self.logger.info(f"H[bn].Tx + H[nn]x + c[n] - A[n].Ty + z_l[n] - z_u[n]: {condition_3}") 
         assert np.allclose(norm_2(condition_3), 0, atol=self.tol), condition_3
 
         #lower bound conditions, 
@@ -369,7 +369,7 @@ class quadratic_problem ():
         @return True if every condition is satisfied
         """
         condition_1 = self.H @ self.x + self.c - self.A.T @ self.y + self.z_l - self.z_u
-        self.logger.info(f"Hx + c - A.Ty - z: {condition_1}") 
+        self.logger.info(f"Hx + c - A.Ty + z_l - z_u: {condition_1}") 
         assert np.allclose(norm_2(condition_1), 0, atol=self.tol), condition_1
         condition_2 = self.A @ self.x + self.M @ self.y - self.b
         self.logger.info(f"Ax + My - b: {condition_2}") 
@@ -543,7 +543,7 @@ class quadratic_problem ():
         
         # --------------- Inizio loop principale
         while True:
-            l_list = np.argwhere(((self.z_l + self.r_l) < 0.-self.tol) | (-(self.z_u + self.r_u) < 0.-self.tol)) #questo da un qualsiasi indice che viola i vincoli
+            l_list = np.argwhere(((self.z_l + self.r_l) < 0.-self.tol) | ((self.z_u + self.r_u) < 0.-self.tol)) #questo da un qualsiasi indice che viola i vincoli
             self.logger.info(f"The indexes that violate the constrains are: {l_list.flatten()}")
             if l_list.size == 0:
                 self.logger.info(f"The primal algorith just terminated its course. The solutions are as follows:")
@@ -559,10 +559,10 @@ class quadratic_problem ():
                 )  # non si può fare un passo, aka siamo arrivati alla nostra soluzione ottima
             #l = l_list[0]
             print(f"{l_list[np.argmin(self.z_l[l_list] + self.r_l[l_list])]}")
-            print(f"{l_list[np.argmin(-(self.z_u[l_list] + self.r_u[l_list]))]}")
+            print(f"{l_list[np.argmin((self.z_u[l_list] + self.r_u[l_list]))]}")
             l1 = l_list[np.argmin(self.z_l[l_list] + self.r_l[l_list])]
-            l2 = l_list[np.argmin(-(self.z_u[l_list] + self.r_u[l_list]))]
-            if self.z_l[l1] + self.r_l[l1] < -(self.z_u[l2] + self.r_u[l2]):
+            l2 = l_list[np.argmin((self.z_u[l_list] + self.r_u[l_list]))]
+            if self.z_l[l1] + self.r_l[l1] < (self.z_u[l2] + self.r_u[l2]):
                 l = l1
             else:
                 l = l2
@@ -574,7 +574,7 @@ class quadratic_problem ():
             else:
                 self.B[l] = False
 
-            while (self.z_l[l] + self.r_l[l]) < 0.-self.tol or -(self.z_u[l] + self.r_u[l]) < 0.-self.tol:
+            while (self.z_l[l] + self.r_l[l]) < 0.-self.tol or (self.z_u[l] + self.r_u[l]) < 0.-self.tol:
 #                input("premi per continuare...")
                 self.primal_intermediate(l)
                 self.reset_deltas()
@@ -613,6 +613,9 @@ class quadratic_problem ():
         self.logger.info(f"sol:\n{tmp_sol}")
         
         self.dx[self.B], self.dy[:] = tmp_sol[:B_size], -tmp_sol[B_size:]
+        if (self.x[l] - self.u[l] - self.q_u[l] > 0.-self.tol):
+            self.dx = -self.dx
+            self.dy = -self.dy
         self.logger.info(f"delta x:\n{self.dx}")
         self.logger.info(f"delta y:\n{self.dy}")
 
@@ -628,26 +631,26 @@ class quadratic_problem ():
         )
         if (self.z_l[l] + self.r_l[l] < 0.-self.tol):
             #self.dz_l[self.N] = tmp_dz
-            self.dz_l[l] = tmp_dz_l
+            self.dz_l[l] = -tmp_dz_l
             #self.dx[l] = 1.
 
             alpha_opt = math.inf if np.allclose(self.dz_l[l], 0, atol=self.tol) else -(self.z_l[l] + self.r_l[l]) / self.dz_l[l]
     
         if (self.z_u[l] + self.r_u[l] < 0.-self.tol): #questi due if, in teoria, sono uno l'opposto dell'altro. o vale uno o vale l'altro.
             #self.dz_u[self.N] = tmp_dz
-            self.dz_u[l] = -tmp_dz_l
+            self.dz_u[l] = tmp_dz_l
             #tmp_dz = -tmp_dz
             #self.dx[l] = -1.
 
-            alpha_opt = math.inf if np.allclose(self.dz_u[l], 0, atol=self.tol) else -(self.z_u[l] + self.r_u[l]) / self.dz_u[l]
+            alpha_opt = math.inf if np.allclose(self.dz_u[l], 0, atol=self.tol) else (self.z_u[l] + self.r_u[l]) / self.dz_u[l]
 
-        self.dz_l[self.N] = np.where(self.z_l[self.N] + self.r_l[self.N] < 0-self.tol, tmp_dz, 0)
-        self.dz_u[self.N] = np.where(self.z_u[self.N] + self.r_u[self.N] < 0-self.tol, -tmp_dz, 0)
+        self.dz_l[self.N] = np.where(self.z_l[self.N] + self.r_l[self.N] < 0-self.tol, -tmp_dz, 0)
+        self.dz_u[self.N] = np.where(self.z_u[self.N] + self.r_u[self.N] < 0-self.tol, tmp_dz, 0)
         self.logger.info(f"delta z_l\n{self.dz_l}")
         self.logger.info(f"delta z_u\n{self.dz_u}")
 
-        min_mask = (self.dx != 0)
-        to_min = np.where(self.dx < 0, (self.x - self.l + self.q_l), -(self.x - self.u - self.q_u))
+        min_mask = ~np.isclose(self.dx, 0, atol=self.tol)
+        to_min = np.where(self.dx < 0, (self.x - self.l + self.q_l), (self.x - self.u - self.q_u))
         to_min[~min_mask] = np.inf
         to_min[min_mask] = to_min[min_mask]/-self.dx[min_mask]
         self.logger.info(f"to_min:\n{to_min}\n")
@@ -728,23 +731,23 @@ class quadratic_problem ():
 
         if (self.z_l[l] + self.r_l[l] < 0.-self.tol):
             #self.dz_l[self.N] = tmp_dz
-            self.dz_l[l] = 1
+            self.dz_l[l] = -1.
             
             alpha_opt = -(self.z_l[l] + self.r_l[l])
             
         if (self.z_u[l] + self.r_u[l] < 0.-self.tol):
             #self.dz_u[self.N] = tmp_dz
-            self.dz_u[l] = 1
+            self.dz_u[l] = 1.
             print(self.z_u[l])
             
             alpha_opt = -(self.z_u[l] + self.r_u[l])
 
-        self.dz_l[self.N] = np.where(self.z_l[self.N] + self.r_l[self.N] < 0-self.tol, tmp_dz, 0)
+        self.dz_l[self.N] = np.where(self.z_l[self.N] + self.r_l[self.N] < 0-self.tol, -tmp_dz, 0)
         self.dz_u[self.N] = np.where(self.z_u[self.N] + self.r_u[self.N] < 0-self.tol, tmp_dz, 0)
-        self.logger.info(f"delta z_l\n{self.dz_l[self.N]} - {self.z_l[self.N]}")
-        self.logger.info(f"delta z_u\n{self.dz_u[self.N]} - {self.z_u[self.N]}")
+        self.logger.info(f"delta z_l\n{self.dz_l}")
+        self.logger.info(f"delta z_u\n{self.dz_u}")
         
-        min_mask = (self.dx != 0)
+        min_mask = ~np.isclose(self.dx, 0, atol=self.tol)
         to_min = np.where(self.dx < 0, (self.x - self.l + self.q_l), -(self.x - self.u - self.q_u))
         print(to_min)
         to_min[~min_mask] = np.inf
@@ -874,26 +877,26 @@ class quadratic_problem ():
         )
         
         if (self.x[l] - self.l[l] + self.q_l[l] < 0.-self.tol):
-            self.dz_l[l] = 1.
+            self.dz_l[l] = 1. #in teria dovrebbe essere -1 ma non torna :/
             #self.dz_l[self.N] = tmp_dz
 
             alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(self.x[l] - self.l[l] + self.q_l[l])/self.dx[l] #dx > 0
             
         elif (-self.x[l] + self.u[l] + self.q_u[l] < 0.-self.tol):
-            self.dz_u[l] = -1.
+            self.dz_u[l] = 1.
             #self.dz_u[self.N] = tmp_dz
             
             alpha_opt = np.inf if np.allclose(self.dx[l], 0, atol=self.tol) else -(-self.x[l] + self.u[l] + self.q_u[l])/self.dx[l] #dx > 0
 
-        self.dz_l[self.N] = np.where(self.z_l[self.N] + self.r_l[self.N] < 0-self.tol, tmp_dz, 0)
-        self.dz_u[self.N] = np.where(self.z_u[self.N] + self.r_u[self.N] < 0-self.tol, -tmp_dz, 0)
+        self.dz_l[self.N] = np.where(self.z_l[self.N] + self.r_l[self.N] < 0-self.tol, -tmp_dz, 0)
+        self.dz_u[self.N] = np.where(self.z_u[self.N] + self.r_u[self.N] < 0-self.tol, tmp_dz, 0)
         self.logger.info(f"delta z_l\n{self.dz_l}")
         self.logger.info(f"delta z_u\n{self.dz_u}")
 
         min_mask = ( self.dz_u < 0 ) | ( self.dz_l < 0)
-        to_min = (self.r_u + self.z_u) + self.r_l + self.z_l 
+        to_min = (self.r_u + self.z_u) - (self.r_l + self.z_l)
         to_min[~min_mask] = np.inf
-        to_min[min_mask] = to_min[min_mask]/-(self.dz_u[min_mask] + self.dz_l[min_mask])
+        to_min[min_mask] = to_min[min_mask]/-(self.dz_u[min_mask] - self.dz_l[min_mask])
 
         print(f"min_mask: {min_mask}")
         print(f"z_u: {self.z_u[min_mask]} r_u: {self.r_u[min_mask]}")
@@ -978,29 +981,29 @@ class quadratic_problem ():
 
         if (self.x[l] - self.l[l] + self.q_l[l] < 0.-self.tol):
             #self.dz_l[self.N] = tmp_dz
-            self.dz_l[l] = tmp_dz_l
+            self.dz_l[l] = -tmp_dz_l
             #self.dx[l] = 1.
             
-            alpha_opt = -(self.x[l] - self.l[l] + self.q_l[l])
+            alpha_opt = (self.x[l] - self.l[l] + self.q_l[l])
 
         if (self.x[l] - self.u[l] + self.q_u[l] > 0.+self.tol):
             #self.dz_u[self.N] = tmp_dz
-            self.dz_u[l] = -tmp_dz_l
+            self.dz_u[l] = tmp_dz_l
             #self.dx[l] = -1.
 
-            alpha_opt = -(-self.x[l] + self.u[l] + self.q_u[l])
+            alpha_opt = (-self.x[l] + self.u[l] + self.q_u[l])
         
         self.logger.info(f"delta x:\n{self.dx}")
         self.logger.info(f"delta y:\n{self.dy}")
-        self.dz_l[self.N] = np.where(self.z_l[self.N] + self.r_l[self.N] < 0-self.tol, tmp_dz, 0)
-        self.dz_u[self.N] = np.where(self.z_u[self.N] + self.r_u[self.N] < 0-self.tol, -tmp_dz, 0)
+        self.dz_l[self.N] = np.where(self.z_l[self.N] + self.r_l[self.N] < 0-self.tol, -tmp_dz, 0)
+        self.dz_u[self.N] = np.where(self.z_u[self.N] + self.r_u[self.N] < 0-self.tol, tmp_dz, 0)
         self.logger.info(f"delta z_l\n{self.dz_l}")
         self.logger.info(f"delta z_u\n{self.dz_u}")
 
         min_mask = ( self.dz_u < 0 ) | ( self.dz_l < 0)
-        to_min = (self.r_u + self.z_u) + self.r_l + self.z_l 
+        to_min = (self.r_u + self.z_u) - (self.r_l + self.z_l)
         to_min[~min_mask] = np.inf
-        to_min[min_mask] = to_min[min_mask]/-(self.dz_u[min_mask] + self.dz_l[min_mask])
+        to_min[min_mask] = to_min[min_mask]/-(self.dz_u[min_mask] - self.dz_l[min_mask])
 
         print(f"min_mask: {min_mask}")
         print(f"z_u: {self.z_u[min_mask]} r_u: {self.r_u[min_mask]}")
